@@ -1,86 +1,129 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Shield, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, Wrench, AlertCircle } from "lucide-react";
+import Link from "next/link";
 
-export default function WorkerLoginPage() {
-  const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+export default function WorkerLogin() {
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+  });
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+
+    if (!formData.email.trim()) {
+      newErrors.email = "Email is required";
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = "Email is invalid";
+    }
+
+    if (!formData.password) {
+      newErrors.password = "Password is required";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError("");
+    
+    if (!validateForm()) {
+      return;
+    }
 
+    setIsLoading(true);
+    
     try {
-      const response = await fetch("/api/worker/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+      const response = await fetch('/api/worker/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
       });
 
       const result = await response.json();
-
+      
       if (result.success) {
-        router.push("/worker/dashboard");
-        router.refresh();
+        // Store worker token in cookie (handled by API)
+        alert('Login successful!');
+        window.location.href = '/worker/dashboard';
       } else {
-        setError(result.message || "Login failed");
+        setErrors({ general: result.error || 'Login failed' });
       }
-    } catch (err) {
-      setError("Network error. Please try again.");
+    } catch (error) {
+      setErrors({ general: 'Network error. Please try again.' });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
+    }
+  };
+
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
   return (
-    <main className="min-h-screen bg-slate2-50 flex items-center justify-center p-6">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 text-white shadow-lg shadow-brand-500/30">
-            <Shield className="h-8 w-8" />
+    <main className="min-h-screen bg-gradient-to-br from-brand-50 to-slate2-100">
+      <div className="mx-auto max-w-md px-4 py-12 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 p-4 shadow-lg">
+            <Wrench className="h-8 w-8 text-white" />
           </div>
-          <h1 className="text-3xl font-black text-slate2-900">Worker Portal</h1>
-          <p className="mt-2 text-sm text-slate2-600">Sign in to manage your services</p>
+          <h1 className="font-display text-3xl font-black text-slate2-900">Worker Login</h1>
+          <p className="mt-2 text-sm text-slate2-600">Access your worker dashboard</p>
         </div>
 
         {/* Login Form */}
-        <div className="rounded-2xl border border-slate2-200 bg-white p-8 shadow-lg">
-          <form onSubmit={handleLogin} className="space-y-6">
-            {error && (
-              <div className="flex items-center gap-3 rounded-xl bg-rose-50 p-4 text-rose-700">
-                <AlertCircle className="h-5 w-5 flex-shrink-0" />
-                <span className="text-sm font-medium">{error}</span>
-              </div>
-            )}
+        <div className="rounded-2xl border border-slate2-200 bg-white p-8 shadow-xl">
+          {errors.general && (
+            <div className="mb-6 rounded-xl bg-rose-50 border border-rose-200 p-4">
+              <p className="text-sm font-medium text-rose-800">{errors.general}</p>
+            </div>
+          )}
 
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Email */}
             <div>
-              <label className="mb-2 block text-sm font-semibold text-slate2-700">Email Address</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-xl border border-slate2-200 bg-slate2-50 px-4 py-3 text-sm outline-none focus:border-brand-500 focus:bg-white"
-                placeholder="worker@example.com"
-                required
-              />
+              <label className="mb-2 block text-sm font-semibold text-slate2-700">
+                Email Address
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate2-400" />
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => handleInputChange('email', e.target.value)}
+                  className={`w-full rounded-xl border ${errors.email ? 'border-rose-300' : 'border-slate2-200'} bg-white pl-10 pr-4 py-3 text-slate2-900 placeholder-slate2-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20`}
+                  placeholder="Enter your email"
+                  required
+                />
+              </div>
+              {errors.email && (
+                <p className="mt-1 text-xs font-medium text-rose-600">{errors.email}</p>
+              )}
             </div>
 
+            {/* Password */}
             <div>
-              <label className="mb-2 block text-sm font-semibold text-slate2-700">Password</label>
+              <label className="mb-2 block text-sm font-semibold text-slate2-700">
+                Password
+              </label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-xl border border-slate2-200 bg-slate2-50 px-4 py-3 pr-12 text-sm outline-none focus:border-brand-500 focus:bg-white"
+                  value={formData.password}
+                  onChange={(e) => handleInputChange('password', e.target.value)}
+                  className={`w-full rounded-xl border ${errors.password ? 'border-rose-300' : 'border-slate2-200'} bg-white pr-12 py-3 text-slate2-900 placeholder-slate2-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20`}
                   placeholder="Enter your password"
                   required
                 />
@@ -92,32 +135,41 @@ export default function WorkerLoginPage() {
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
+              {errors.password && (
+                <p className="mt-1 text-xs font-medium text-rose-600">{errors.password}</p>
+              )}
             </div>
 
+            {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-brand-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-70"
+              disabled={isLoading}
+              className="flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-brand-500 to-brand-600 px-6 py-3.5 text-base font-bold text-white shadow-lg shadow-brand-500/30 transition-all hover:from-brand-600 hover:to-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? "Signing in..." : "Sign In"}
+              {isLoading ? (
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+              ) : (
+                "Sign In to Worker Portal"
+              )}
             </button>
           </form>
 
+          {/* Signup Link */}
           <div className="mt-6 text-center">
-            <p className="text-xs text-slate2-500">
-              Contact admin if you need login credentials
+            <p className="text-sm text-slate2-600">
+              Don't have an account?{" "}
+              <Link href="/worker/signup" className="font-semibold text-brand-600 hover:text-brand-700">
+                Register here
+              </Link>
             </p>
           </div>
-        </div>
 
-        {/* Back to Admin */}
-        <div className="mt-6 text-center">
-          <a
-            href="/admin/login"
-            className="text-sm font-semibold text-slate2-600 hover:text-brand-600"
-          >
-            ← Back to Admin Login
-          </a>
+          {/* Forgot Password */}
+          <div className="text-center">
+            <Link href="/worker/forgot-password" className="text-sm font-medium text-slate2-600 hover:text-brand-600">
+              Forgot your password?
+            </Link>
+          </div>
         </div>
       </div>
     </main>

@@ -28,6 +28,12 @@ const workerSchema = new Schema(
       required: true,
       trim: true,
     },
+    status: {
+      type: String,
+      required: true,
+      enum: ['pending', 'approved', 'rejected', 'suspended'],
+      default: 'pending',
+    },
     photoUrl: {
       type: String,
       default: "",

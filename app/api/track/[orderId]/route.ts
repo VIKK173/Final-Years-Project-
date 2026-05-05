@@ -29,7 +29,7 @@ export async function GET(
       ]
     })
     .populate('userId', 'fullName email phone')
-    .populate('assignedWorkerId', 'fullName phone')
+    .populate('workerId', 'fullName phone')
     .lean();
 
     if (!booking) {
@@ -86,21 +86,34 @@ export async function GET(
       });
     }
 
+    // Build customer info - use saved fields first, then populate fallback
+    const customerName = bookingData.customerName || bookingData.userId?.fullName || "Customer";
+    const customerPhone = bookingData.customerPhone || bookingData.address?.phone || bookingData.userId?.phone || "N/A";
+
+    // Build address string from saved address
+    const addr = bookingData.address;
+    const customerAddress = addr
+      ? [addr.houseNo, addr.street, addr.city, addr.pincode].filter(Boolean).join(', ')
+      : "Service Address";
+
+    // Worker info - use assigned worker or dummy for demo
+    const assignedWorker = bookingData.workerId as any;
+    const workerName = assignedWorker?.fullName || (bookingData.status !== 'pending' ? 'Ramesh Kumar (Demo)' : undefined);
+    const workerPhone = assignedWorker?.phone || (bookingData.status !== 'pending' ? '+91 98765 43210' : undefined);
+
     const order = {
       id: bookingData.bookingCode || String(bookingData._id),
-      serviceName: bookingData.serviceName || "Home Service",
+      serviceName: bookingData.serviceName || bookingData.serviceCategory || "Home Service",
       subService: bookingData.subService || "General Service",
       status: bookingData.status,
       bookingDate: new Date(bookingData.bookingDate).toLocaleDateString("en-IN"),
       timeSlot: bookingData.timeSlot || "10:00 AM",
       amount: bookingData.amount || 0,
-      customerName: bookingData.userId?.fullName || "Unknown Customer",
-      customerPhone: bookingData.userId?.phone || "N/A",
-      customerAddress: bookingData.address ? 
-        `${bookingData.address.flat}, ${bookingData.address.area}, ${bookingData.address.city} - ${bookingData.address.pin}` : 
-        "Service Address",
-      workerName: bookingData.assignedWorkerId?.fullName || undefined,
-      workerPhone: bookingData.assignedWorkerId?.phone || undefined,
+      customerName,
+      customerPhone,
+      customerAddress,
+      workerName,
+      workerPhone,
       createdAt: bookingData.createdAt,
       tracking: {
         status: trackingStatus,

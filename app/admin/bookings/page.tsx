@@ -119,7 +119,7 @@ export default function AdminBookingsPage() {
   const unassigned = bookings.filter((b) => !b.worker && b.status === "pending").length;
 
   return (
-    <main className="min-h-screen bg-slate-100">
+    <main className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
       {/* Toast */}
       {toast && (
         <div
@@ -133,7 +133,7 @@ export default function AdminBookingsPage() {
 
       <div className="mx-auto max-w-[1600px]">
         {/* Header */}
-        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur">
+        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur shadow-sm">
           <div className="flex flex-wrap items-center gap-4">
             <Link
               href="/admin/dashboard"
@@ -144,7 +144,7 @@ export default function AdminBookingsPage() {
             </Link>
 
             <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 p-2 text-white">
+              <div className="rounded-xl bg-gradient-to-br from-green-600 to-emerald-600 p-2 text-white">
                 <Shield className="h-5 w-5" />
               </div>
               <div>
@@ -187,10 +187,10 @@ export default function AdminBookingsPage() {
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
-                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all duration-200 ${
                   statusFilter === s
-                    ? "bg-indigo-600 text-white shadow"
-                    : "bg-white text-slate-600 hover:bg-slate-100"
+                    ? "bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-lg"
+                    : "bg-white text-slate-600 hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50 border border-slate-200"
                 }`}
               >
                 {s === "all" ? "All" : s.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
@@ -214,10 +214,10 @@ export default function AdminBookingsPage() {
               <p className="text-lg font-bold text-slate-400">No bookings found</p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50">
+                  <tr className="border-b border-slate-100 bg-gradient-to-r from-green-50 to-emerald-50">
                     <th className="px-5 py-4 text-left text-xs font-black uppercase tracking-[0.12em] text-slate-500">Service</th>
                     <th className="px-5 py-4 text-left text-xs font-black uppercase tracking-[0.12em] text-slate-500">Status</th>
                     <th className="px-5 py-4 text-left text-xs font-black uppercase tracking-[0.12em] text-slate-500">Amount</th>
@@ -235,7 +235,7 @@ export default function AdminBookingsPage() {
                     );
 
                     return (
-                      <tr key={booking._id} className="hover:bg-slate-50/60 transition">
+                      <tr key={booking._id} className="hover:bg-gradient-to-r hover:from-green-50/50 hover:to-emerald-50/50 transition-all duration-200">
                         <td className="px-5 py-4">
                           <p className="font-bold text-slate-900">{booking.service.name}</p>
                           <p className="text-xs text-slate-500">{booking.service.category}</p>
@@ -302,7 +302,7 @@ export default function AdminBookingsPage() {
                             <button
                               onClick={() => assignWorker(booking._id)}
                               disabled={assigning === booking._id || !selectedWorker[booking._id]}
-                              className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-3 py-1.5 text-xs font-black text-white transition hover:from-green-700 hover:to-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 shadow-sm"
                             >
                               {assigning === booking._id ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

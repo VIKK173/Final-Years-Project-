@@ -27,13 +27,11 @@ export async function POST(req: NextRequest) {
 
     await BookingModel.findByIdAndUpdate(bookingId, {
       workerId: new mongoose.Types.ObjectId(workerId),
-      status: "confirmed",
+      status: "pending", // Worker needs to accept first
+      assignedAt: new Date(),
     });
 
-    await WorkerModel.findByIdAndUpdate(workerId, {
-      dutyStatus: "busy",
-      isAvailable: false,
-    });
+    // Don't change worker status until they accept the booking
 
     return NextResponse.json({
       success: true,

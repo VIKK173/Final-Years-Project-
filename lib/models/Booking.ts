@@ -1,10 +1,9 @@
-﻿import { Schema, model, models, Types, type InferSchemaType } from "mongoose";
+import { Schema, model, models, Types, type InferSchemaType } from "mongoose";
 
 const bookingSchema = new Schema(
   {
     userId: {
-      type: Types.ObjectId,
-      ref: "User",
+      type: String,
       required: true,
     },
     workerId: {
@@ -16,6 +15,11 @@ const bookingSchema = new Schema(
       type: Types.ObjectId,
       ref: "Service",
       required: true,
+    },
+    serviceCategory: {
+      type: String,
+      required: true,
+      trim: true,
     },
     bookingCode: {
       type: String,
@@ -56,6 +60,19 @@ const bookingSchema = new Schema(
       city: String,
       state: String,
       pincode: String,
+      phone: String,
+    },
+    customerName: {
+      type: String,
+      default: "",
+    },
+    customerPhone: {
+      type: String,
+      default: "",
+    },
+    customerEmail: {
+      type: String,
+      default: "",
     },
     notes: {
       type: String,
@@ -74,4 +91,7 @@ bookingSchema.index({ userId: 1, createdAt: -1 });
 bookingSchema.index({ bookingCode: 1 });
 
 export type Booking = InferSchemaType<typeof bookingSchema>;
-export const BookingModel = models.Booking || model("Booking", bookingSchema);
+if (models.Booking) {
+  delete models.Booking;
+}
+export const BookingModel = model("Booking", bookingSchema);

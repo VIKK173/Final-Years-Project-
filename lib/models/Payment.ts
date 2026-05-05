@@ -1,4 +1,4 @@
-﻿import { Schema, model, models, Types, type InferSchemaType } from "mongoose";
+import { Schema, model, models, Types, type InferSchemaType } from "mongoose";
 
 const paymentSchema = new Schema(
   {
@@ -8,8 +8,7 @@ const paymentSchema = new Schema(
       required: true,
     },
     userId: {
-      type: Types.ObjectId,
-      ref: "User",
+      type: String,
       required: true,
     },
     amount: {

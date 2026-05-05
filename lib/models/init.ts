@@ -1,4 +1,4 @@
-﻿import { connectToDatabase } from "@/lib/db";
+import { connectToDatabase } from "@/lib/db";
 
 import { AdminModel } from "@/lib/models/Admin";
 import { UserModel } from "@/lib/models/User";
@@ -7,6 +7,7 @@ import { ServiceModel } from "@/lib/models/Service";
 import { BookingModel } from "@/lib/models/Booking";
 import { PaymentModel } from "@/lib/models/Payment";
 import { FeedbackModel } from "@/lib/models/Feedback";
+import { OtpModel } from "@/lib/models/Otp";
 
 let initialized = false;
 
@@ -30,6 +31,7 @@ export async function ensureDatabaseCollections() {
     BookingModel.collection.name,
     PaymentModel.collection.name,
     FeedbackModel.collection.name,
+    OtpModel.collection.name,
   ];
 
   const existingCollections = await db.listCollections({}, { nameOnly: true }).toArray();
@@ -49,6 +51,7 @@ export async function ensureDatabaseCollections() {
     BookingModel.syncIndexes(),
     PaymentModel.syncIndexes(),
     FeedbackModel.syncIndexes(),
+    OtpModel.syncIndexes(),
   ]);
 
   initialized = true;

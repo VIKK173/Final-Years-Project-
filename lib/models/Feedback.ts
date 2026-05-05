@@ -8,19 +8,22 @@ const feedbackSchema = new Schema(
       required: true,
     },
     userId: {
-      type: Types.ObjectId,
-      ref: "User",
+      type: String,
       required: true,
     },
     workerId: {
       type: Types.ObjectId,
       ref: "Worker",
-      required: true,
+      default: null,
     },
     serviceId: {
       type: Types.ObjectId,
       ref: "Service",
-      required: true,
+      default: null,
+    },
+    userName: {
+      type: String,
+      default: "",
     },
     serviceStars: {
       type: Number,
@@ -63,4 +66,8 @@ feedbackSchema.index({ createdAt: -1 });
 feedbackSchema.index({ serviceStars: 1 });
 
 export type Feedback = InferSchemaType<typeof feedbackSchema>;
+// Safe model registration - only override in dev to allow schema changes
+if (process.env.NODE_ENV === "development" && models.Feedback) {
+  delete models.Feedback;
+}
 export const FeedbackModel = models.Feedback || model("Feedback", feedbackSchema);

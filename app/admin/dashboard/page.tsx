@@ -5,6 +5,7 @@ import {
   Briefcase,
   CalendarCheck2,
   LayoutDashboard,
+  MessageSquare,
   Search,
   Settings,
   Shield,
@@ -18,9 +19,12 @@ import {
   Home,
   CheckCircle2,
   AlertCircle,
+  Star,
+  User,
 } from "lucide-react";
 
 import { AdminLogoutButton } from "@/app/components/AdminLogoutButton";
+import { RecentCustomerFeedback } from "@/app/components/RecentCustomerFeedback";
 import { getAdminAnalytics } from "@/lib/admin-analytics";
 import { getAuthenticatedAdmin } from "@/lib/admin-auth";
 import { connectToDatabase } from "@/lib/db";
@@ -137,13 +141,13 @@ export default async function AdminDashboardPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-slate2-50 text-slate2-900">
+    <main className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 text-slate2-900">
       <div className="mx-auto flex min-h-screen max-w-[1700px]">
         {/* Sidebar */}
         <aside className="hidden w-72 border-r border-slate2-200 bg-white px-6 py-8 lg:flex lg:flex-col shadow-lg">
           {/* Logo */}
           <div className="mb-10 flex items-center gap-3">
-            <div className="rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 p-3 text-white shadow-lg shadow-brand-500/30">
+            <div className="rounded-2xl bg-gradient-to-br from-green-600 to-emerald-600 p-3 text-white shadow-lg shadow-green-500/30">
               <Shield className="h-7 w-7" />
             </div>
             <div>
@@ -165,6 +169,9 @@ export default async function AdminDashboardPage() {
             </Link>
             <Link href="/admin/finance" className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-slate2-600 transition hover:bg-brand-50 hover:text-brand-600">
               <Wallet className="h-5 w-5" /> Finance
+            </Link>
+            <Link href="/admin/inquiries" className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-slate2-600 transition hover:bg-violet-50 hover:text-violet-600">
+              <MessageSquare className="h-5 w-5" /> Inquiries
             </Link>
             <Link href="/admin/settings" className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-slate2-600 transition hover:bg-brand-50 hover:text-brand-600">
               <Settings className="h-5 w-5" /> Settings
@@ -199,8 +206,8 @@ export default async function AdminDashboardPage() {
                   <Bell className="h-5 w-5" />
                 </button>
                 <div className="text-right">
-                  <p className="font-bold leading-tight text-slate2-900">{admin.fullName}</p>
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-600">{admin.role.replace("_", " ")}</p>
+                  <p className="font-bold leading-tight text-slate2-900">{admin.fullName || admin.email || "Admin"}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-600">{admin.role?.replace("_", " ") || "Administrator"}</p>
                 </div>
               </div>
             </div>
@@ -343,10 +350,23 @@ export default async function AdminDashboardPage() {
                   <svg viewBox="0 0 100 100" className="h-64 w-full">
                     <defs>
                       <linearGradient id="dashboardLine" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#10b88f" />
-                        <stop offset="100%" stopColor="#0a9272" />
+                        <stop offset="0%" stopColor="#10b981" />
+                        <stop offset="100%" stopColor="#059669" />
                       </linearGradient>
                     </defs>
+                    {/* Grid lines */}
+                    {[0, 25, 50, 75, 100].map((y) => (
+                      <line
+                        key={y}
+                        x1="0"
+                        y1={y}
+                        x2="100"
+                        y2={y}
+                        stroke="#e2e8f0"
+                        strokeWidth="0.5"
+                      />
+                    ))}
+                    {/* Data line */}
                     <polyline
                       points={dailyPoints}
                       fill="none"
@@ -355,11 +375,40 @@ export default async function AdminDashboardPage() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     />
+                    {/* Data points and labels */}
+                    {metrics.dailyBookings.map((entry, index) => {
+                      const x = (index / Math.max(metrics.dailyBookings.length - 1, 1)) * 100;
+                      const y = 100 - (entry.bookings / maxDaily) * 80;
+                      return (
+                        <g key={index}>
+                          <circle
+                            cx={x}
+                            cy={y}
+                            r="4"
+                            fill="#10b981"
+                            className="hover:r-6 transition-all cursor-pointer"
+                          />
+                          {entry.bookings > 0 && (
+                            <text
+                              x={x}
+                              y={y - 8}
+                              textAnchor="middle"
+                              className="text-xs font-bold fill-slate-700"
+                            >
+                              {entry.bookings}
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })}
                   </svg>
                   <div className="mt-2 grid grid-cols-7 gap-2 text-center text-[11px] font-bold text-slate2-500">
                     {metrics.dailyBookings.slice(-7).map((entry) => (
                       <span key={entry.date}>{entry.date}</span>
                     ))}
+                  </div>
+                  <div className="mt-2 text-center text-xs text-slate2-400">
+                    Max: {maxDaily} bookings per day
                   </div>
                 </div>
               </article>
@@ -375,26 +424,53 @@ export default async function AdminDashboardPage() {
                 </div>
 
                 <div className="space-y-3">
-                  {metrics.monthlyEarnings.slice(-6).map((month) => {
+                  {metrics.monthlyEarnings.slice(-6).map((month, index) => {
                     const width = Math.max((month.earnings / maxMonthly) * 100, 4);
+                    const isCurrentMonth = new Date().toLocaleString("en-IN", { month: "short" }) === month.month;
+                    const hasEarnings = month.earnings > 0;
+                    
                     return (
                       <div key={month.month} className="space-y-1">
-                        <div className="flex items-center justify-between text-xs font-bold text-slate2-500">
-                          <span>{month.month}</span>
-                          <span>{formatCurrency(month.earnings)}</span>
+                        <div className="flex items-center justify-between text-xs font-bold">
+                          <span className={`${isCurrentMonth ? "text-green-600" : "text-slate2-500"} ${hasEarnings ? "font-black" : ""}`}>
+                            {month.month} {isCurrentMonth && "(Current)"}
+                          </span>
+                          <span className={`${hasEarnings ? "text-green-600 font-black" : "text-slate2-400"}`}>
+                            {formatCurrency(month.earnings)}
+                          </span>
                         </div>
-                        <div className="h-2.5 rounded-full bg-slate2-100">
+                        <div className="h-3 rounded-full bg-slate2-100 relative overflow-hidden">
                           <div
-                            className="h-2.5 rounded-full bg-gradient-to-r from-brand-400 to-brand-500"
+                            className={`h-3 rounded-full transition-all duration-500 ${
+                              isCurrentMonth 
+                                ? "bg-gradient-to-r from-green-500 to-emerald-500 shadow-lg" 
+                                : hasEarnings 
+                                  ? "bg-gradient-to-r from-blue-500 to-brand-500" 
+                                  : "bg-gradient-to-r from-slate2-300 to-slate2-400"
+                            }`}
                             style={{ width: `${width}%` }}
                           />
+                          {hasEarnings && (
+                            <div className="absolute right-1 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                          )}
                         </div>
                       </div>
                     );
                   })}
                 </div>
+                <div className="mt-4 pt-3 border-t border-slate2-100">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-bold text-slate2-700">Total This Year</span>
+                    <span className="font-black text-green-600">
+                      {formatCurrency(metrics.monthlyEarnings.reduce((sum, m) => sum + m.earnings, 0))}
+                    </span>
+                  </div>
+                </div>
               </article>
             </div>
+
+            {/* Recent Customer Feedback */}
+            <RecentCustomerFeedback limit={5} refreshInterval={30000} />
 
             {/* Quick Actions */}
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -431,14 +507,14 @@ export default async function AdminDashboardPage() {
                   </div>
                 </div>
               </Link>
-              <Link href="/admin/settings" className="group rounded-2xl border border-slate2-200 bg-white p-5 shadow-sm transition hover:border-violet-300 hover:shadow-md">
+              <Link href="/admin/inquiries" className="group rounded-2xl border border-slate2-200 bg-white p-5 shadow-sm transition hover:border-violet-300 hover:shadow-md">
                 <div className="flex items-center gap-3">
                   <div className="rounded-xl bg-violet-100 p-3 text-violet-600 transition group-hover:bg-violet-500 group-hover:text-white">
-                    <Settings className="h-5 w-5" />
+                    <MessageSquare className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-bold text-slate2-900">Configure</p>
-                    <p className="text-xs text-slate2-500">Settings</p>
+                    <p className="font-bold text-slate2-900">View</p>
+                    <p className="text-xs text-slate2-500">Inquiries</p>
                   </div>
                 </div>
               </Link>

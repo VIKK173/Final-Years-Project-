@@ -70,16 +70,23 @@ export async function getAdminAnalytics(): Promise<AdminAnalytics> {
     BookingModel.aggregate<{ _id: Date; bookings: number }>([
       {
         $match: {
-          bookingDate: {
-            $gte: new Date(Date.now() - 13 * DAY_MS),
-          },
+          $or: [
+            {
+              $expr: {
+                $gte: [
+                  { $ifNull: ["$bookingDate", "$createdAt"] },
+                  new Date(Date.now() - 13 * DAY_MS)
+                ]
+              }
+            }
+          ]
         },
       },
       {
         $group: {
           _id: {
             $dateTrunc: {
-              date: "$bookingDate",
+              date: { $ifNull: ["$bookingDate", "$createdAt"] },
               unit: "day",
             },
           },
@@ -92,16 +99,19 @@ export async function getAdminAnalytics(): Promise<AdminAnalytics> {
       {
         $match: {
           status: "completed",
-          bookingDate: {
-            $gte: new Date(new Date().getFullYear(), 0, 1),
-          },
+          $expr: {
+            $gte: [
+              { $ifNull: ["$bookingDate", "$createdAt"] },
+              new Date(new Date().getFullYear(), 0, 1)
+            ]
+          }
         },
       },
       {
         $group: {
           _id: {
             $dateTrunc: {
-              date: "$bookingDate",
+              date: { $ifNull: ["$bookingDate", "$createdAt"] },
               unit: "month",
             },
           },
@@ -110,7 +120,9 @@ export async function getAdminAnalytics(): Promise<AdminAnalytics> {
       },
       { $sort: { _id: 1 } },
     ]),
-    BookingModel.find({}, { amount: 1, status: 1, bookingDate: 1, serviceName: 1, subService: 1 })
+    BookingModel.find({})
+      .populate('serviceId', 'name')
+      .populate('userId', 'fullName')
       .sort({ createdAt: -1 })
       .limit(6)
       .lean(),
@@ -157,9 +169,9 @@ export async function getAdminAnalytics(): Promise<AdminAnalytics> {
       id: String((booking as { _id: mongoose.Types.ObjectId })._id),
       amount: booking.amount,
       status: booking.status,
-      bookingDate: new Date(booking.bookingDate).toISOString(),
-      serviceName: (booking as any).serviceName || "Unknown Service",
-      subService: (booking as any).subService || "Unknown",
+      bookingDate: new Date((booking as any).bookingDate || (booking as any).createdAt).toISOString(),
+      serviceName: (booking as any).serviceId?.name || (booking as any).serviceName || "Service",
+      subService: (booking as any).subService || "Standard Service",
     })),
   };
 }

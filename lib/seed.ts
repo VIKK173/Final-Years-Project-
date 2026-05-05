@@ -5,6 +5,8 @@ import { ServiceModel } from "@/lib/models/Service";
 import { BookingModel } from "@/lib/models/Booking";
 import { PaymentModel } from "@/lib/models/Payment";
 import { FeedbackModel } from "@/lib/models/Feedback";
+import { AdminModel } from "@/lib/models/Admin";
+import bcrypt from "bcryptjs";
 
 function toSlug(value: string) {
   return value
@@ -15,13 +17,14 @@ function toSlug(value: string) {
 }
 
 export async function seedInitialDataIfEmpty() {
-  const [serviceCount, workerCount, userCount, bookingCount, paymentCount, feedbackCount] = await Promise.all([
+  const [serviceCount, workerCount, userCount, bookingCount, paymentCount, feedbackCount, adminCount] = await Promise.all([
     ServiceModel.countDocuments(),
     WorkerModel.countDocuments(),
     UserModel.countDocuments(),
     BookingModel.countDocuments(),
     PaymentModel.countDocuments(),
     FeedbackModel.countDocuments(),
+    AdminModel.countDocuments(),
   ]);
 
   if (serviceCount === 0) {
@@ -40,7 +43,7 @@ export async function seedInitialDataIfEmpty() {
   }
 
   if (workerCount === 0) {
-    await WorkerModel.insertMany(
+    const workers = await WorkerModel.insertMany(
       PROS.map((worker) => ({
         fullName: worker.name,
         email: `${toSlug(worker.name)}@servicehub.local`,
@@ -57,6 +60,14 @@ export async function seedInitialDataIfEmpty() {
       })),
       { ordered: false },
     );
+    
+    // Hash passwords for workers
+    for (const worker of workers) {
+      await WorkerModel.updateOne(
+        { _id: worker._id },
+        { $set: { password: await bcrypt.hash("worker123", 10) } }
+      );
+    }
   }
 
   if (userCount === 0) {

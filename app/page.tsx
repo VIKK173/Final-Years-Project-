@@ -4,17 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { useClerk, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { SERVICES, PROS, TESTIS } from "@/lib/data";
-import { 
-  Search, 
-  MapPin, 
-  ChevronDown, 
-  User, 
+import {
+  Search,
+  MapPin,
+  ChevronDown,
+  User,
   ShoppingBag,
-  CheckCircle2, 
-  ShieldCheck, 
-  Award, 
-  RefreshCcw, 
-  PhoneCall, 
+  CheckCircle2,
+  ShieldCheck,
+  Award,
+  RefreshCcw,
+  PhoneCall,
   CreditCard,
   ChevronRight,
   ChevronLeft,
@@ -40,6 +40,8 @@ import {
   IndianRupee,
   Camera,
   MessageSquare,
+  MessageCircle,
+  Mail,
   ThumbsUp,
   Edit3,
   Menu,
@@ -49,15 +51,15 @@ import {
 const HERO_SLIDES = [
   {
     id: "clean-1",
-    img: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=1600&q=85",
+    img: "/images/hero/cleaning.png",
   },
   {
     id: "ac-1",
-    img: "https://images.unsplash.com/photo-1558227691-41ea78d1f631?w=1600&q=85",
+    img: "/images/hero/ac.png",
   },
   {
     id: "furn-1",
-    img: "https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=1600&q=85",
+    img: "/images/hero/furniture.png",
   },
   {
     id: "salon-1",
@@ -91,6 +93,7 @@ type BookingData = {
 
 type OrderItem = {
   id: string;
+  _id?: string;
   service: string;
   sub: string;
   date: string | null;
@@ -164,6 +167,16 @@ export default function Home() {
   const [feedbackTags, setFeedbackTags] = useState<string[]>([]);
   const [feedbacks, setFeedbacks] = useState<{ orderId: string; stars: number; workerStars: number; comment: string; tags: string[]; createdAt: string }[]>([]);
 
+  // Tracking modal states
+  const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
+  const [trackingOrder, setTrackingOrder] = useState<OrderItem | null>(null);
+
+  // Live chat states
+  const [isLiveChatOpen, setIsLiveChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<Array<{ id: string, sender: 'user' | 'support', message: string, timestamp: string }>>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+
   // Profile edit states
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const [profileName, setProfileName] = useState("");
@@ -172,11 +185,63 @@ export default function Home() {
   const [profileCity, setProfileCity] = useState("Ranchi");
   const [profileBio, setProfileBio] = useState("");
   const [profileSaved, setProfileSaved] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState("Ranchi, Jharkhand");
+
+  // Help Center / Inquiry form states
+  const [inquiryName, setInquiryName] = useState("");
+  const [inquiryEmail, setInquiryEmail] = useState("");
+  const [inquiryPhone, setInquiryPhone] = useState("");
+  const [inquiryType, setInquiryType] = useState("other");
+  const [inquirySubject, setInquirySubject] = useState("");
+  const [inquiryMessage, setInquiryMessage] = useState("");
+  const [inquiryUrgent, setInquiryUrgent] = useState(false);
+  const [inquirySubmitting, setInquirySubmitting] = useState(false);
+  const [inquirySubmitted, setInquirySubmitted] = useState(false);
+  const [myInquiries, setMyInquiries] = useState<any[]>([]);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+  const [manualLocationInput, setManualLocationInput] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleSendMessage = () => {
+    if (!chatInput.trim()) return;
+
+    const newMessage = {
+      id: Date.now().toString(),
+      sender: 'user' as const,
+      message: chatInput.trim(),
+      timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setChatMessages([...chatMessages, newMessage]);
+    setChatInput("");
+
+    // Simulate support response
+    setIsTyping(true);
+    setTimeout(() => {
+      const supportResponses = [
+        "Thank you for reaching out! How can I help you today?",
+        "I understand your concern. Let me assist you with that.",
+        "Sure! I can help you with that. Could you provide more details?",
+        "Thanks for contacting support. I'm here to help!",
+        "I'll be happy to assist you. What seems to be the issue?"
+      ];
+
+      const supportMessage = {
+        id: (Date.now() + 1).toString(),
+        sender: 'support' as const,
+        message: supportResponses[Math.floor(Math.random() * supportResponses.length)],
+        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+      };
+
+      setChatMessages(prev => [...prev, supportMessage]);
+      setIsTyping(false);
+    }, 2000);
   };
 
   useEffect(() => {
@@ -243,24 +308,136 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [heroSlides.length]);
 
-  // Load orders from localStorage on mount
-  useEffect(() => {
-    const savedOrders = localStorage.getItem('sh_orders');
-    if (savedOrders) {
-      try {
-        setOrders(JSON.parse(savedOrders));
-      } catch (e) {
-        console.error('Failed to parse saved orders:', e);
-      }
+  // Automatic Location Detection
+  const detectLocation = async () => {
+    if (typeof window !== "undefined" && "geolocation" in navigator) {
+      setIsDetectingLocation(true);
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            const { latitude, longitude } = position.coords;
+            const response = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1`
+            );
+            const data = await response.json();
+
+            // Extract city/town/village and state
+            const city = data.address.city || data.address.town || data.address.village || data.address.suburb || data.address.county;
+            const state = data.address.state;
+
+            if (city && state) {
+              const locationStr = `${city}, ${state}`;
+              setCurrentLocation(locationStr);
+              setProfileCity(city);
+              // Update bData city for bookings
+              setBData(prev => ({
+                ...prev,
+                addr: { ...prev.addr, city: city }
+              }));
+              console.log("[location-debug] Location detected:", locationStr);
+            } else if (city || state) {
+              const locationStr = city || state;
+              setCurrentLocation(locationStr);
+              if (city) setProfileCity(city);
+            }
+          } catch (error) {
+            console.error("[location-debug] Geocoding failed:", error);
+          } finally {
+            setIsDetectingLocation(false);
+          }
+        },
+        (error) => {
+          console.error("[location-debug] Geolocation error:", error.message);
+          setIsDetectingLocation(false);
+          // Show toast for manual fix if denied
+          if (error.code === 1) { // PERMISSION_DENIED
+            showToast("Location denied. Please select city manually.");
+          }
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
     }
+  };
+
+  useEffect(() => {
+    detectLocation();
   }, []);
 
-  // Save orders to localStorage whenever they change
+  // Load user-specific orders from API on mount
   useEffect(() => {
-    if (orders.length > 0) {
-      localStorage.setItem('sh_orders', JSON.stringify(orders));
+    if (user && isLoaded) {
+      fetchUserOrders();
+    } else if (isLoaded && !user) {
+      setOrders([]);
     }
-  }, [orders]);
+  }, [user, isLoaded]);
+
+  // Fetch user's inquiries when help-center panel opens
+  useEffect(() => {
+    if (dashPanel === 'help-center' && user?.id) {
+      fetch(`/api/inquiries?userId=${user.id}&limit=20`)
+        .then(r => r.json())
+        .then(data => { if (data.success) setMyInquiries(data.data); })
+        .catch(() => { });
+    }
+  }, [dashPanel, user, inquirySubmitted]);
+
+  const fetchUserOrders = async () => {
+    try {
+      const response = await fetch('/api/customer/bookings');
+      const result = await response.json();
+
+      if (result.success) {
+        const userOrders = result.bookings.map((booking: any) => {
+          // Find the service from SERVICES array using multiple approaches
+          let serviceData = null;
+
+          // Try to match by service name first (most reliable)
+          if (booking.service?.name) {
+            serviceData = SERVICES.find(s => s.name === booking.service.name);
+          }
+
+          // If not found, try by category
+          if (!serviceData && booking.service?.category) {
+            serviceData = SERVICES.find(s => s.cat === booking.service.category);
+          }
+
+          // If still not found, try partial name matching
+          if (!serviceData && booking.service?.name) {
+            const serviceName = booking.service.name.toLowerCase();
+            serviceData = SERVICES.find(s => {
+              const sName = s.name.toLowerCase();
+              return sName.includes(serviceName) || serviceName.includes(sName);
+            });
+          }
+
+          // Debug logging
+          console.log('Order image match:', {
+            serviceName: booking.service?.name,
+            serviceCategory: booking.service?.category,
+            foundImage: serviceData?.img || 'default'
+          });
+
+          return {
+            id: booking.bookingCode,
+            _id: booking.id,
+            service: booking.service?.name || 'Service',
+            sub: booking.subService || booking.notes || 'Service',
+            date: booking.bookingDate,
+            time: '10:00 AM', // Default time
+            pro: booking.worker?.fullName || 'Not assigned',
+            price: booking.amount,
+            status: booking.status,
+            img: serviceData?.img || '/images/default-service.svg',
+            createdAt: new Date(booking.createdAt).toLocaleDateString('en-IN')
+          };
+        });
+        setOrders(userOrders);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user orders:', error);
+    }
+  };
 
   useEffect(() => {
     console.log("[user-auth-debug]", {
@@ -315,15 +492,14 @@ export default function Home() {
     if (!s) return;
     setSelSvc(s);
     setBStep(1);
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
+    const today = new Date();
+    // Use today instead of tomorrow and set as default selected
     setBData({
-        ...bData,
-        sub: s.subs[0],
-        pro: PROS[0].name,
-        date: tomorrow.toLocaleDateString('en-IN'),
-        time: "10:00 AM"
+      ...bData,
+      sub: s.subs[0],
+      pro: PROS[0].name,
+      date: today.toLocaleDateString('en-IN'),
+      time: "10:00 AM"
     });
     setIsBookModalOpen(true);
   };
@@ -341,9 +517,16 @@ export default function Home() {
     }
 
     const totalAmount = bData.sub.p + Math.round(bData.sub.p * 0.05);
-    
+
     try {
-      // Save booking to database
+      console.log("PlaceOrder: Sending request to /api/bookings", {
+        userId: user.id,
+        serviceName: selSvc.name,
+        serviceCategory: selSvc.cat,
+        subService: bData.sub.n,
+        bookingDate: bData.date
+      });
+
       const response = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -368,23 +551,28 @@ export default function Home() {
         }),
       });
 
+      console.log("PlaceOrder: Received response status:", response.status);
       const result = await response.json();
+      console.log("PlaceOrder: Result:", result);
 
       if (result.success && result.booking) {
-        // Also save to localStorage for immediate display
-        const newOrder = {
-          id: result.booking.bookingCode || `#SH${1000 + orders.length + 1}`,
-          service: selSvc.name,
-          sub: bData.sub.n,
-          date: bData.date,
-          time: bData.time,
-          pro: bData.pro,
-          price: totalAmount,
-          status: result.booking.status,
-          img: selSvc.img,
-          createdAt: new Date().toLocaleDateString('en-IN')
+        // Save recent booking data for worker dummy data
+        const recentBooking = {
+          userName: user.fullName,
+          userEmail: user.primaryEmailAddress?.emailAddress,
+          userPhone: user.phoneNumbers?.[0]?.phoneNumber || bData.addr?.phone,
+          mobileNumber: bData.addr?.phone,
+          address: bData.addr,
+          serviceName: selSvc.name,
+          amount: totalAmount,
+          bookingDate: bData.date,
+          timeSlot: bData.time,
+          subService: bData.sub.n
         };
-        setOrders([newOrder, ...orders]);
+        localStorage.setItem('recentBooking', JSON.stringify(recentBooking));
+
+        // Refresh user orders after booking
+        fetchUserOrders();
         setBStep(6);
         showToast("Booking confirmed! Check your dashboard for details.");
       } else {
@@ -434,8 +622,9 @@ export default function Home() {
     showToast("Signed out");
   };
 
-  const showOrderTracking = (orderId: string) => {
-    window.open(`/track/${orderId}`, '_blank');
+  const showOrderTracking = (order: OrderItem) => {
+    setTrackingOrder(order);
+    setIsTrackingModalOpen(true);
   };
 
   const resetBookingState = () => {
@@ -474,6 +663,96 @@ export default function Home() {
         </div>
       )}
 
+      {/* Location Modal */}
+      <div className={`modal-wrap ${isLocationModalOpen ? 'open' : ''}`} onClick={() => setIsLocationModalOpen(false)}>
+        <div className="modal-box bg-white rounded-2xl w-full max-w-md shadow-2xl relative overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="bg-gradient-to-br from-rose-500 to-rose-600 p-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                <MapPin className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">Select Location</h3>
+                <p className="text-sm text-white/70">Enter your city manually</p>
+              </div>
+            </div>
+          </div>
+          <button onClick={() => setIsLocationModalOpen(false)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 text-white hover:bg-white/40 flex items-center justify-center text-lg transition-all z-10 font-bold">x</button>
+          <div className="p-6">
+            <div className="relative mb-4">
+              <input
+                placeholder="Search city (e.g. Mumbai, Maharashtra)"
+                value={manualLocationInput}
+                onChange={(e) => setManualLocationInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && manualLocationInput.trim()) {
+                    setCurrentLocation(manualLocationInput.trim());
+                    const cityMatch = manualLocationInput.split(',')[0].trim();
+                    setProfileCity(cityMatch);
+                    setBData(prev => ({ ...prev, addr: { ...prev.addr, city: cityMatch } }));
+                    setIsLocationModalOpen(false);
+                    showToast(`Location set to ${manualLocationInput}`);
+                  }
+                }}
+                className="w-full bg-slate2-50 border border-slate2-200 rounded-xl pl-4 pr-12 py-3.5 text-sm outline-none focus:border-rose-500 transition-all font-medium text-slate-800"
+              />
+              <button
+                onClick={() => {
+                  if (manualLocationInput.trim()) {
+                    setCurrentLocation(manualLocationInput.trim());
+                    const cityMatch = manualLocationInput.split(',')[0].trim();
+                    setProfileCity(cityMatch);
+                    setBData(prev => ({ ...prev, addr: { ...prev.addr, city: cityMatch } }));
+                    setIsLocationModalOpen(false);
+                    showToast(`Location set to ${manualLocationInput}`);
+                  }
+                }}
+                className="absolute right-2 top-2 w-9 h-9 rounded-lg bg-rose-500 text-white flex items-center justify-center hover:bg-rose-600 transition-colors shadow-lg shadow-rose-200"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+
+            <button
+              onClick={() => {
+                detectLocation();
+                setIsLocationModalOpen(false);
+              }}
+              className="w-full flex items-center justify-center gap-2 py-3.5 border-2 border-slate2-100 rounded-xl text-slate2-600 font-bold hover:bg-slate2-50 hover:border-rose-100 transition-all mb-6 group"
+            >
+              <MapPin className="w-4 h-4 text-rose-500 group-hover:animate-bounce" />
+              Use Current Location
+            </button>
+
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs font-bold text-slate2-400 uppercase tracking-widest">Popular Cities</p>
+                <div className="h-px flex-1 bg-slate2-100 ml-3"></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {["Mumbai, Maharashtra", "Delhi, Delhi", "Bangalore, Karnataka", "Hyderabad, Telangana", "Ahmedabad, Gujarat", "Ranchi, Jharkhand"].map(city => (
+                  <button
+                    key={city}
+                    onClick={() => {
+                      setCurrentLocation(city);
+                      const cityMatch = city.split(',')[0];
+                      setProfileCity(cityMatch);
+                      setBData(prev => ({ ...prev, addr: { ...prev.addr, city: cityMatch } }));
+                      setIsLocationModalOpen(false);
+                      showToast(`Switched to ${city}`);
+                    }}
+                    className="px-3 py-2.5 text-xs font-bold text-slate2-600 bg-slate2-50 rounded-xl hover:bg-rose-50 hover:text-rose-600 transition-all text-left flex items-center gap-2 border border-transparent hover:border-rose-100"
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full bg-slate2-300 group-hover:bg-rose-400"></div>
+                    {city}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Auth Modal */}
       <div className={`modal-wrap ${authModalOpen ? 'open' : ''}`} onClick={closeAuthModal}>
         <div className="modal-box bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl relative" onClick={e => e.stopPropagation()}>
@@ -506,362 +785,464 @@ export default function Home() {
       </div>
 
       {/* Booking Modal */}
-      <div className={`modal-wrap ${isBookModalOpen ? 'open' : ''}`} onClick={() => setIsBookModalOpen(false)}>
+      <div
+        className={`modal-wrap ${isBookModalOpen ? 'open' : ''}`}
+        onClick={(e) => {
+          // ONLY close if the background itself is clicked
+          if (e.target === e.currentTarget) setIsBookModalOpen(false);
+        }}
+      >
         <div className="modal-box bg-white rounded-2xl w-full max-w-2xl shadow-2xl relative overflow-hidden max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="relative h-[140px] w-full overflow-hidden rounded-t-2xl">
-                <img
-                  src={selSvc?.img || "https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=800&q=80"}
-                  alt={selSvc?.name || "Selected home service"}
-                  className="h-full w-full object-cover"
-                />
-                <div className="absolute inset-0 bg-black/45" />
-                <div className="absolute bottom-4 left-5 text-white text-[20px] font-bold leading-tight">
-                  {selSvc?.name || "Service Booking"}
+          <div className="relative h-[140px] w-full overflow-hidden rounded-t-2xl">
+            <img
+              src={selSvc?.img || "https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=800&q=80"}
+              alt={selSvc?.name || "Selected home service"}
+              className="h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-black/45" />
+            <div className="absolute bottom-4 left-5 text-white text-[20px] font-bold leading-tight">
+              {selSvc?.name || "Service Booking"}
+            </div>
+            <button onClick={() => setIsBookModalOpen(false)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-black/35 text-white hover:bg-black/50 flex items-center justify-center text-lg z-10 font-bold">x</button>
+          </div>
+          <div className="px-7 pt-4 pb-2">
+            <p className="text-sm text-slate2-500 font-semibold">Fill details to confirm booking</p>
+          </div>
+          <div className="p-7">
+            {bStep === 1 && (
+              <div>
+                <p className="text-xs font-bold text-slate2-500 uppercase tracking-widest mb-4">Choose Service Type</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {selSvc?.subs.map((s: ServiceSub, i: number) => (
+                    <div 
+                      key={i} 
+                      onClick={() => setBData({ ...bData, sub: s })} 
+                      className={`flex items-center gap-4 p-4 border-2 transition-all duration-300 group ${bData.sub?.n === s.n ? 'border-brand-500 bg-brand-50 shadow-lg shadow-brand/10' : 'border-slate2-100 hover:border-slate2-200 hover:bg-slate2-50'} rounded-2xl cursor-pointer active:scale-95`}
+                    >
+                      <div className={`w-3 h-3 rounded-full border-2 transition-all ${bData.sub?.n === s.n ? 'border-brand-500 bg-brand-500' : 'border-slate2-300'}`} />
+                      <div>
+                        <div className={`text-sm font-bold transition-colors ${bData.sub?.n === s.n ? 'text-brand-700' : 'text-slate2-800'}`}>{s.n}</div>
+                        <div className="text-xs font-semibold text-slate2-400 mt-0.5">₹{s.p}</div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <button onClick={() => setIsBookModalOpen(false)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-black/35 text-white hover:bg-black/50 flex items-center justify-center text-lg z-10 font-bold">x</button>
-            </div>
-            <div className="px-7 pt-4 pb-2">
-                <p className="text-sm text-slate2-500 font-semibold">Fill details to confirm booking</p>
-            </div>
-            <div className="p-7">
-                {bStep === 1 && (
-                    <div>
-                        <p className="text-xs font-bold text-slate2-500 uppercase tracking-widest mb-4">Choose Service Type</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {selSvc?.subs.map((s: ServiceSub, i: number) => (
-                                <div key={i} onClick={() => setBData({...bData, sub: s})} className={`flex items-center gap-3 p-3.5 border-2 ${bData.sub?.n === s.n ? 'border-brand-500 bg-brand-50' : 'border-slate2-200'} rounded-xl cursor-pointer transition-all`}>
-                                    <div>
-                                        <div className="text-sm font-bold text-slate2-800">{s.n}</div>
-                                        <div className="text-xs text-slate2-400 mt-0.5">₹{s.p}</div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <button onClick={() => setBStep(2)} className="w-full mt-6 bg-brand-600 text-white font-bold py-3 rounded-xl">Continue →</button>
-                    </div>
-                )}
-                {bStep === 2 && (
-                    <div>
-                        <p className="text-xs font-bold text-slate2-500 uppercase tracking-widest mb-4">Select Date & Time</p>
-                        {/* 14 Day Scrollable Date Picker */}
-                        <div className="mb-4">
-                            <p className="text-xs font-bold text-slate2-400 mb-2">Select Date</p>
-                            <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                                {[...Array(14)].map((_, i) => {
-                                    const d = new Date();
-                                    d.setDate(d.getDate() + i + 1);
-                                    const ds = d.toLocaleDateString('en-IN');
-                                    const month = d.toLocaleDateString('en-IN', { month: 'short' });
-                                    return (
-                                        <div
-                                            key={i}
-                                            onClick={() => setBData({...bData, date: ds})}
-                                            className={`shrink-0 text-center px-4 py-3 border-2 rounded-xl cursor-pointer min-w-[70px] transition-all ${bData.date === ds ? 'border-brand-500 bg-brand-50' : 'border-slate2-200 hover:border-brand-300'}`}
-                                        >
-                                            <div className="text-[10px] font-bold text-slate2-400 uppercase">{d.toLocaleDateString('en-IN', {weekday: 'short'})}</div>
-                                            <div className="font-display text-xl font-bold text-slate2-900">{d.getDate()}</div>
-                                            <div className="text-[10px] font-semibold text-slate2-400">{month}</div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                        {/* Time Slots */}
-                        <div className="mb-4">
-                            <p className="text-xs font-bold text-slate2-400 mb-2">Select Time Slot</p>
-                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                                {["08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM", "06:00 PM"].map(t => (
-                                    <div
-                                        key={t}
-                                        onClick={() => setBData({...bData, time: t})}
-                                        className={`flex items-center justify-center gap-1.5 py-2.5 border-2 rounded-xl cursor-pointer text-sm font-semibold transition-all ${bData.time === t ? 'border-brand-500 bg-brand-50 text-brand-600' : 'border-slate2-200 text-slate2-600 hover:border-brand-300'}`}
-                                    >
-                                        <Clock className="w-3.5 h-3.5" />
-                                        {t}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                        <button onClick={() => setBStep(3)} className="w-full bg-brand-600 text-white font-bold py-3 rounded-xl">Continue →</button>
-                        <button onClick={() => setBStep(1)} className="w-full mt-2 text-slate2-400 text-sm">← Back</button>
-                    </div>
-                )}
-                {bStep === 3 && (
-                    <div>
-                        <p className="text-xs font-bold text-slate2-500 uppercase tracking-widest mb-4">Verify Mobile Number</p>
-                        {mobileVerifyStep === 1 && (
-                            <div>
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center">
-                                        <PhoneCall className="w-5 h-5 text-white" />
-                                    </div>
-                                    <div>
-                                        <p className="font-bold text-slate2-900">Enter Mobile Number</p>
-                                        <p className="text-xs text-slate2-400">We'll send a 6-digit OTP</p>
-                                    </div>
-                                </div>
-                                <div className="flex gap-2 mb-4">
-                                    <span className="flex items-center px-4 bg-slate2-100 border border-slate2-200 rounded-xl text-sm font-bold text-slate2-600">+91</span>
-                                    <input
-                                        type="tel"
-                                        placeholder="10-digit mobile number"
-                                        value={mobileNumber}
-                                        onChange={(e) => setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                                        className="flex-1 border border-slate2-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 transition-all"
-                                    />
-                                </div>
-                                <button
-                                    onClick={() => {
-                                        if (mobileNumber.length === 10) {
-                                            setIsVerifying(true);
-                                            setTimeout(() => {
-                                                setIsVerifying(false);
-                                                setMobileVerifyStep(2);
-                                                setOtpTimer(30);
-                                                showToast("OTP sent to +91 " + mobileNumber);
-                                            }, 1200);
-                                        } else {
-                                            showToast("Please enter valid 10-digit number");
-                                        }
-                                    }}
-                                    disabled={isVerifying}
-                                    className="w-full bg-brand-600 text-white font-bold py-3 rounded-xl disabled:opacity-50"
-                                >
-                                    {isVerifying ? "Sending OTP..." : "Send OTP"}
-                                </button>
-                            </div>
-                        )}
-                        {mobileVerifyStep === 2 && (
-                            <div>
-                                <div className="text-center mb-4">
-                                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center mx-auto mb-3">
-                                        <ShieldCheck className="w-6 h-6 text-white" />
-                                    </div>
-                                    <p className="font-bold text-slate2-900">Enter OTP</p>
-                                    <p className="text-xs text-slate2-400">Sent to +91 {mobileNumber}</p>
-                                </div>
-                                <div className="flex justify-center gap-2 mb-4">
-                                    {[0, 1, 2, 3, 4, 5].map((i) => (
-                                        <input
-                                            key={i}
-                                            type="text"
-                                            inputMode="numeric"
-                                            maxLength={1}
-                                            value={otpCode[i]}
-                                            onChange={(e) => {
-                                                const val = e.target.value.replace(/\D/g, '');
-                                                const newOtp = [...otpCode];
-                                                newOtp[i] = val;
-                                                setOtpCode(newOtp);
-                                                if (val && i < 5) {
-                                                    const nextInput = e.target.nextElementSibling as HTMLInputElement;
-                                                    nextInput?.focus();
-                                                }
-                                            }}
-                                            className="w-11 h-12 text-center text-lg font-bold border border-slate2-200 rounded-xl outline-none focus:border-brand-500 transition-all"
-                                        />
-                                    ))}
-                                </div>
-                                <button
-                                    onClick={() => {
-                                        const enteredOtp = otpCode.join('');
-                                        if (enteredOtp.length === 6) {
-                                            setIsVerifying(true);
-                                            setTimeout(() => {
-                                                setIsVerifying(false);
-                                                setMobileVerified(true);
-                                                setBData({...bData, addr: {...bData.addr, phone: mobileNumber}});
-                                                setMobileVerifyStep(3);
-                                                showToast("Mobile verified successfully!");
-                                            }, 1200);
-                                        } else {
-                                            showToast("Please enter complete 6-digit OTP");
-                                        }
-                                    }}
-                                    disabled={isVerifying}
-                                    className="w-full bg-brand-600 text-white font-bold py-3 rounded-xl disabled:opacity-50"
-                                >
-                                    {isVerifying ? "Verifying..." : "Verify OTP"}
-                                </button>
-                                <button
-                                    onClick={() => setMobileVerifyStep(1)}
-                                    className="w-full mt-3 text-slate2-500 text-sm font-semibold hover:text-brand-600"
-                                >
-                                    ← Change Number
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        if (otpTimer <= 0) {
-                                            setOtpTimer(30);
-                                            showToast("OTP resent to +91 " + mobileNumber);
-                                        }
-                                    }}
-                                    disabled={otpTimer > 0}
-                                    className="w-full mt-2 text-sm font-semibold text-brand-600 disabled:text-slate2-400"
-                                >
-                                    {otpTimer > 0 ? `Resend OTP in ${otpTimer}s` : "Resend OTP"}
-                                </button>
-                            </div>
-                        )}
-                        {mobileVerifyStep === 3 && (
-                            <div className="text-center py-4">
-                                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center mx-auto mb-3">
-                                    <CheckCircle2 className="w-8 h-8 text-white" />
-                                </div>
-                                <p className="font-bold text-slate2-900 mb-1">Mobile Verified!</p>
-                                <p className="text-sm text-slate2-500 mb-3">+91 {mobileNumber}</p>
-                                <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-full text-sm font-bold">
-                                    <CheckCircle2 className="w-4 h-4" />
-                                    Verified
-                                </div>
-                            </div>
-                        )}
-                        <button onClick={() => { if (mobileVerified || mobileVerifyStep === 3) setBStep(4); else showToast("Please verify mobile first"); }} className="w-full bg-brand-600 text-white font-bold py-3 rounded-xl mt-4">Continue →</button>
-                        <button onClick={() => setBStep(2)} className="w-full mt-2 text-slate2-400 text-sm">← Back</button>
-                    </div>
-                )}
-                {bStep === 4 && (
-                    <div>
-                        <p className="text-xs font-bold text-slate2-500 uppercase tracking-widest mb-4">Select Payment Method</p>
-                        {/* Payment Options */}
-                        <div className="space-y-3 mb-4">
-                            {/* UPI */}
-                            <div
-                                onClick={() => setPaymentMethod("upi")}
-                                className={`p-4 border-2 rounded-xl cursor-pointer transition-all ${paymentMethod === "upi" ? 'border-brand-500 bg-brand-50' : 'border-slate2-200'}`}
-                            >
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="font-bold text-slate2-900">UPI</span>
-                                    <div className="flex gap-2">
-                                        {/* GPay Logo */}
-                                        <div className="w-8 h-8 rounded-lg bg-white border border-slate2-200 flex items-center justify-center text-[10px] font-black">
-                                            <span className="text-blue-500">G</span><span className="text-red-500">o</span><span className="text-yellow-500">o</span><span className="text-blue-500">g</span><span className="text-green-500">l</span><span className="text-red-500">e</span>
-                                        </div>
-                                        {/* PhonePe Logo */}
-                                        <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center text-white text-[8px] font-black">Pe</div>
-                                        {/* Paytm Logo */}
-                                        <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center text-white text-[8px] font-black">Paytm</div>
-                                    </div>
-                                </div>
-                                {paymentMethod === "upi" && (
-                                    <input
-                                        type="text"
-                                        placeholder="yourname@upi"
-                                        value={upiId}
-                                        onChange={(e) => setUpiId(e.target.value)}
-                                        className="w-full border border-slate2-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500 mt-2"
-                                    />
-                                )}
-                            </div>
-                            {/* Debit/Credit Card */}
-                            <div
-                                onClick={() => setPaymentMethod("card")}
-                                className={`p-4 border-2 rounded-xl cursor-pointer transition-all ${paymentMethod === "card" ? 'border-brand-500 bg-brand-50' : 'border-slate2-200'}`}
-                            >
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="font-bold text-slate2-900">Debit / Credit Card</span>
-                                    <div className="flex gap-2">
-                                        {/* Visa Logo */}
-                                        <div className="w-8 h-5 rounded bg-blue-800 flex items-center justify-center text-white text-[8px] font-black italic">VISA</div>
-                                        {/* Mastercard Logo */}
-                                        <div className="w-8 h-5 rounded bg-slate2-800 flex items-center justify-center">
-                                            <div className="w-3 h-3 rounded-full bg-red-500 -mr-1"></div>
-                                            <div className="w-3 h-3 rounded-full bg-orange-500 -ml-1"></div>
-                                        </div>
-                                        {/* RuPay Logo */}
-                                        <div className="w-8 h-5 rounded bg-green-600 flex items-center justify-center text-white text-[6px] font-black">RuPay</div>
-                                    </div>
-                                </div>
-                                {paymentMethod === "card" && (
-                                    <div className="space-y-2 mt-2">
-                                        <input type="text" placeholder="Card Number" value={cardNumber} onChange={(e) => setCardNumber(e.target.value.replace(/\D/g, '').slice(0, 16))} className="w-full border border-slate2-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500" />
-                                        <div className="flex gap-2">
-                                            <input type="text" placeholder="MM/YY" value={cardExpiry} onChange={(e) => setCardExpiry(e.target.value)} className="flex-1 border border-slate2-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500" />
-                                            <input type="password" placeholder="CVV" value={cardCvv} onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, '').slice(0, 3))} className="w-20 border border-slate2-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500" />
-                                        </div>
-                                        <input type="text" placeholder="Cardholder Name" value={cardName} onChange={(e) => setCardName(e.target.value)} className="w-full border border-slate2-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500" />
-                                    </div>
-                                )}
-                            </div>
-                            {/* Net Banking */}
-                            <div
-                                onClick={() => setPaymentMethod("netbanking")}
-                                className={`p-4 border-2 rounded-xl cursor-pointer transition-all ${paymentMethod === "netbanking" ? 'border-brand-500 bg-brand-50' : 'border-slate2-200'}`}
-                            >
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="font-bold text-slate2-900">Net Banking</span>
-                                    <div className="flex gap-2">
-                                        {/* SBI Logo */}
-                                        <div className="w-8 h-5 rounded bg-blue-700 flex items-center justify-center text-white text-[6px] font-black">SBI</div>
-                                        {/* HDFC Logo */}
-                                        <div className="w-8 h-5 rounded bg-blue-900 flex items-center justify-center text-white text-[5px] font-black">HDFC</div>
-                                        {/* ICICI Logo */}
-                                        <div className="w-8 h-5 rounded bg-orange-500 flex items-center justify-center text-white text-[5px] font-black">ICICI</div>
-                                    </div>
-                                </div>
-                                {paymentMethod === "netbanking" && (
-                                    <select value={selectedBank} onChange={(e) => setSelectedBank(e.target.value)} className="w-full border border-slate2-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500 mt-2 bg-white">
-                                        <option value="">Select Bank</option>
-                                        <option value="sbi">State Bank of India</option>
-                                        <option value="hdfc">HDFC Bank</option>
-                                        <option value="icici">ICICI Bank</option>
-                                        <option value="axis">Axis Bank</option>
-                                        <option value="pnb">Punjab National Bank</option>
-                                    </select>
-                                )}
-                            </div>
-                            {/* Cash on Delivery */}
-                            <div
-                                onClick={() => setPaymentMethod("cod")}
-                                className={`p-4 border-2 rounded-xl cursor-pointer transition-all ${paymentMethod === "cod" ? 'border-brand-500 bg-brand-50' : 'border-slate2-200'}`}
-                            >
-                                <div className="flex items-center justify-between">
-                                    <span className="font-bold text-slate2-900">Cash on Delivery</span>
-                                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
-                                        <IndianRupee className="w-4 h-4 text-emerald-600" />
-                                    </div>
-                                </div>
-                                <p className="text-xs text-slate2-400 mt-1">Pay when service is completed</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => {
-                                // RAZORPAY_KEY_ID = '' // enter your key here
-                                setIsProcessingPayment(true);
-                                setTimeout(() => {
-                                    setIsProcessingPayment(false);
-                                    setBStep(5);
-                                    showToast("Payment successful!");
-                                }, 2200);
-                            }}
-                            disabled={isProcessingPayment}
-                            className="w-full bg-brand-600 text-white font-bold py-3 rounded-xl disabled:opacity-50"
+                <button 
+                  onClick={() => setBStep(2)} 
+                  className="w-full mt-8 bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-brand/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  Continue
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+            {bStep === 2 && (
+              <div>
+                <p className="text-xs font-bold text-slate2-500 uppercase tracking-widest mb-4">Select Date & Time</p>
+                {/* 14 Day Scrollable Date Picker */}
+                <div className="mb-4">
+                  <p className="text-xs font-bold text-slate2-400 mb-2">Select Date</p>
+                  <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                    {[...Array(14)].map((_, i) => {
+                      const d = new Date();
+                      d.setDate(d.getDate() + i);
+                      // Use ISO-like format YYYY-MM-DD for reliable backend parsing
+                      const ds = d.toISOString().split('T')[0];
+                      const month = d.toLocaleDateString('en-IN', { month: 'short' });
+                      return (
+                        <div
+                          key={i}
+                          onClick={() => setBData({ ...bData, date: ds })}
+                          className={`shrink-0 text-center px-5 py-4 border-2 rounded-2xl cursor-pointer min-w-[75px] transition-all duration-300 ${bData.date === ds ? 'border-brand-500 bg-brand-50 shadow-lg shadow-brand/10' : 'border-slate2-100 hover:border-slate2-200 hover:bg-slate2-50'}`}
                         >
-                            {isProcessingPayment ? "Processing payment..." : `Pay ₹${bData.sub?.p ? bData.sub.p + Math.round(bData.sub.p * 0.05) : 0}`}
-                        </button>
-                        <button onClick={() => setBStep(3)} className="w-full mt-2 text-slate2-400 text-sm">← Back</button>
-                    </div>
-                )}
-                {bStep === 5 && (
-                    <div>
-                        <p className="text-xs font-bold text-slate2-500 uppercase tracking-widest mb-4">Booking Summary</p>
-                        <div className="bg-slate2-50 p-4 rounded-xl mb-4">
-                            <div className="flex justify-between font-bold mb-2 text-slate-800"><span>{selSvc?.name}</span><span>₹{bData.sub?.p}</span></div>
-                            <div className="text-sm text-slate2-500 mb-1">Type: {bData.sub?.n}</div>
-                            <div className="text-sm text-slate2-500 mb-1">Date: {bData.date}</div>
-                            <div className="text-sm text-slate2-500 mb-1">Time: {bData.time}</div>
-                            <div className="text-sm text-slate2-500 mb-1">Professional: {bData.pro}</div>
-                            <div className="text-sm text-slate2-500 mb-1">Mobile: +91 {mobileNumber}</div>
-                            <div className="text-sm text-slate2-500 mb-1">Payment: {paymentMethod.toUpperCase()}</div>
-                            <div className="border-t border-slate2-200 mt-2 pt-2 flex justify-between font-bold text-slate-800">
-                                <span>Total (incl. 5% GST)</span>
-                                <span>₹{bData.sub?.p ? bData.sub.p + Math.round(bData.sub.p * 0.05) : 0}</span>
-                            </div>
+                          <div className={`text-[10px] font-black uppercase tracking-wider mb-1 ${bData.date === ds ? 'text-brand-500' : 'text-slate2-400'}`}>{d.toLocaleDateString('en-IN', { weekday: 'short' })}</div>
+                          <div className={`font-display text-2xl font-black ${bData.date === ds ? 'text-brand-600' : 'text-slate2-900'}`}>{d.getDate()}</div>
+                          <div className={`text-[10px] font-bold ${bData.date === ds ? 'text-brand-400' : 'text-slate2-400'}`}>{month}</div>
                         </div>
-                        {/* Generate Prompt Button */}
-                        <button
-                            onClick={() => {
-                                const prompt = `🛠️ ServiceHub Booking Summary
+                      );
+                    })}
+                  </div>
+                </div>
+                {/* Time Slots */}
+                <div className="mb-4">
+                  <p className="text-xs font-bold text-slate2-400 mb-2">Select Time Slot</p>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {["08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM", "06:00 PM"].map(t => (
+                      <div
+                        key={t}
+                        onClick={() => setBData({ ...bData, time: t })}
+                        className={`flex items-center justify-center gap-2 py-3 border-2 rounded-2xl cursor-pointer text-sm font-bold transition-all duration-300 ${bData.time === t ? 'border-brand-500 bg-brand-50 text-brand-600 shadow-lg shadow-brand/10' : 'border-slate2-100 text-slate2-600 hover:border-slate2-200 hover:bg-slate2-50'}`}
+                      >
+                        <Clock className={`w-4 h-4 ${bData.time === t ? 'text-brand-500' : 'text-slate2-400'}`} />
+                        {t}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setBStep(3)} 
+                  className="w-full bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-brand/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  Continue
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+                <button 
+                  onClick={() => setBStep(1)} 
+                  className="w-full mt-4 py-2 text-slate2-400 text-sm font-bold hover:text-slate2-600 transition-colors flex items-center justify-center gap-1"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Back
+                </button>
+              </div>
+            )}
+            {bStep === 3 && (
+              <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="flex items-center justify-between mb-6">
+                  <p className="text-xs font-bold text-slate2-400 uppercase tracking-widest">Verify Mobile Number</p>
+                  <div className="px-2 py-1 bg-brand-50 text-brand-600 text-[10px] font-bold rounded-md uppercase tracking-wider">Step 3 of 5</div>
+                </div>
+
+                {mobileVerifyStep === 1 && (
+                  <div className="animate-in fade-in duration-300">
+                    <div className="flex items-center gap-4 mb-8 bg-slate2-50 p-4 rounded-2xl border border-slate2-100">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 flex items-center justify-center shadow-lg shadow-brand/30">
+                        <PhoneCall className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-slate2-900 text-lg">Enter Mobile Number</p>
+                        <p className="text-sm text-slate2-500">We'll send a 6-digit secure OTP</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-3 mb-6">
+                      <div className="flex items-center px-4 bg-white border-2 border-slate2-100 rounded-2xl text-base font-bold text-slate2-700 shadow-sm">
+                        <span className="text-slate2-400 mr-1">+</span>91
+                      </div>
+                      <div className="flex-1 relative group">
+                        <input
+                          type="tel"
+                          placeholder="10-digit mobile number"
+                          value={mobileNumber}
+                          onChange={(e) => setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                          className="w-full border-2 border-slate2-100 rounded-2xl px-5 py-4 text-base font-medium outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 transition-all shadow-sm group-hover:border-slate2-200"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (mobileNumber.length === 10) {
+                          setIsVerifying(true);
+                          try {
+                            const response = await fetch("/api/otp/send", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ phone: mobileNumber }),
+                            });
+                            const result = await response.json();
+
+                            if (result.success) {
+                              setMobileVerifyStep(2);
+                              setOtpTimer(30);
+                              showToast(result.message);
+                              if (result.devOtp) {
+                                console.log("DEV MODE OTP:", result.devOtp);
+                                showToast(`OTP (Dev): ${result.devOtp}`);
+                              }
+                            } else {
+                              showToast(result.error || "Failed to send OTP");
+                            }
+                          } catch (error) {
+                            showToast("Socket or Network error, please try again.");
+                          } finally {
+                            setIsVerifying(false);
+                          }
+                        } else {
+                          showToast("Please enter valid 10-digit number");
+                        }
+                      }}
+                      disabled={isVerifying}
+                      className="w-full bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-brand/25 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {isVerifying ? (
+                        <>
+                          <RefreshCcw className="w-5 h-5 animate-spin" />
+                          Sending OTP...
+                        </>
+                      ) : (
+                        <>
+                          Send OTP
+                          <ChevronRight className="w-5 h-5" />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {mobileVerifyStep === 2 && (
+                  <div className="animate-in fade-in duration-300 text-center">
+                    <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-emerald-500/20">
+                      <ShieldCheck className="w-8 h-8 text-white" />
+                    </div>
+                    <p className="font-bold text-slate2-900 text-xl mb-1">Verify OTP</p>
+                    <p className="text-sm text-slate2-500 mb-8">Sent to <span className="font-bold text-slate2-700">+91 {mobileNumber}</span></p>
+                    
+                    <div className="flex justify-center gap-3 mb-8">
+                      {[0, 1, 2, 3, 4, 5].map((i) => (
+                        <input
+                          key={i}
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={1}
+                          value={otpCode[i]}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            const newOtp = [...otpCode];
+                            newOtp[i] = val;
+                            setOtpCode(newOtp);
+                            if (val && i < 5) {
+                              const nextInput = (e.target as HTMLInputElement).parentElement?.children[i + 1] as HTMLInputElement;
+                              nextInput?.focus();
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Backspace' && !otpCode[i] && i > 0) {
+                              const prevInput = (e.target as HTMLInputElement).parentElement?.children[i - 1] as HTMLInputElement;
+                              prevInput?.focus();
+                            }
+                          }}
+                          className="w-12 h-14 text-center text-xl font-bold border-2 border-slate2-100 rounded-xl outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 transition-all bg-slate2-50 focus:bg-white"
+                        />
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const enteredOtp = otpCode.join('');
+                        if (enteredOtp.length === 6) {
+                          setIsVerifying(true);
+                          try {
+                            const response = await fetch("/api/otp/verify", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                phone: mobileNumber,
+                                otp: enteredOtp,
+                                fullName: fullName,
+                                email: userEmail
+                              }),
+                            });
+                            const result = await response.json();
+
+                            if (result.success) {
+                              setMobileVerified(true);
+                              setBData({ ...bData, addr: { ...bData.addr, phone: mobileNumber } });
+                              setMobileVerifyStep(3);
+                              showToast("Mobile verified successfully!");
+                            } else {
+                              showToast(result.error || "Invalid OTP");
+                            }
+                          } catch (error) {
+                            showToast("Verification error, please try again.");
+                          } finally {
+                            setIsVerifying(false);
+                          }
+                        } else {
+                          showToast("Please enter complete 6-digit OTP");
+                        }
+                      }}
+                      disabled={isVerifying}
+                      className="w-full bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-brand/25 transition-all active:scale-[0.98] disabled:opacity-50 mb-4"
+                    >
+                      {isVerifying ? "Verifying..." : "Verify OTP"}
+                    </button>
+
+                    <div className="flex items-center justify-center gap-4">
+                      <button
+                        onClick={() => {
+                          if (otpTimer <= 0) {
+                            setOtpTimer(30);
+                            showToast("OTP resent to +91 " + mobileNumber);
+                          }
+                        }}
+                        disabled={otpTimer > 0}
+                        className="text-sm font-bold text-brand-600 hover:text-brand-700 disabled:text-slate2-400 transition-colors"
+                      >
+                        {otpTimer > 0 ? `Resend OTP in ${otpTimer}s` : "Resend OTP"}
+                      </button>
+                      <div className="w-1 h-1 rounded-full bg-slate2-200"></div>
+                      <button
+                        onClick={() => setMobileVerifyStep(1)}
+                        className="text-sm font-bold text-slate2-500 hover:text-slate2-700 transition-colors"
+                      >
+                        Change Number
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {mobileVerifyStep === 3 && (
+                  <div className="animate-in zoom-in duration-500 text-center py-6">
+                    <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-4 border-4 border-emerald-100">
+                      <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+                    </div>
+                    <p className="font-bold text-slate2-900 text-2xl mb-1">Mobile Verified!</p>
+                    <p className="text-slate2-500 mb-6">Confirmed with <span className="font-bold">+91 {mobileNumber}</span></p>
+                    
+                    <button 
+                      onClick={() => setBStep(4)} 
+                      className="w-full bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-brand/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                    >
+                      Continue to Payment
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                )}
+
+                {(mobileVerifyStep === 1 || mobileVerifyStep === 2) && (
+                  <button 
+                    onClick={() => setBStep(2)} 
+                    className="w-full mt-4 py-3 text-slate2-400 text-sm font-bold hover:text-slate2-600 transition-colors flex items-center justify-center gap-1"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Back to Selection
+                  </button>
+                )}
+              </div>
+            )}
+            {bStep === 4 && (
+              <div>
+                <p className="text-xs font-bold text-slate2-500 uppercase tracking-widest mb-4">Select Payment Method</p>
+                {/* Payment Options */}
+                <div className="space-y-3 mb-4">
+                  {/* UPI */}
+                  <div
+                    onClick={() => setPaymentMethod("upi")}
+                    className={`p-5 border-2 rounded-2xl cursor-pointer transition-all duration-300 ${paymentMethod === "upi" ? 'border-brand-500 bg-brand-50 shadow-lg shadow-brand/10' : 'border-slate2-100 hover:border-slate2-200 hover:bg-slate2-50'}`}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-4 h-4 rounded-full border-2 transition-all ${paymentMethod === "upi" ? 'border-brand-500 bg-brand-500' : 'border-slate2-300'}`} />
+                        <span className="font-bold text-slate2-900">UPI / GPay / PhonePe</span>
+                      </div>
+                      <div className="flex gap-2">
+                        {/* GPay Logo */}
+                        <div className="w-8 h-8 rounded-lg bg-white border border-slate2-100 flex items-center justify-center text-[10px] font-black shadow-sm">
+                          <span className="text-blue-500">G</span><span className="text-red-500">o</span><span className="text-yellow-500">o</span><span className="text-blue-500">g</span><span className="text-green-500">l</span><span className="text-red-500">e</span>
+                        </div>
+                      </div>
+                    </div>
+                    {paymentMethod === "upi" && (
+                      <div className="animate-in slide-in-from-top-2 duration-300">
+                        <input
+                          type="text"
+                          placeholder="Enter UPI ID (e.g. mobile@upi)"
+                          value={upiId}
+                          onChange={(e) => setUpiId(e.target.value)}
+                          className="w-full border-2 border-brand-100 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 bg-white transition-all"
+                        />
+                        <p className="text-[10px] text-brand-400 font-bold mt-2 ml-1 uppercase tracking-wider">Fast & Secure Payment</p>
+                      </div>
+                    )}
+                  </div>
+                  {/* Debit/Credit Card */}
+                  <div
+                    onClick={() => setPaymentMethod("card")}
+                    className={`p-5 border-2 rounded-2xl cursor-pointer transition-all duration-300 ${paymentMethod === "card" ? 'border-brand-500 bg-brand-50 shadow-lg shadow-brand/10' : 'border-slate2-100 hover:border-slate2-200 hover:bg-slate2-50'}`}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-4 h-4 rounded-full border-2 transition-all ${paymentMethod === "card" ? 'border-brand-500 bg-brand-500' : 'border-slate2-300'}`} />
+                        <span className="font-bold text-slate2-900">Debit / Credit Card</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="w-8 h-5 rounded bg-blue-800 flex items-center justify-center text-white text-[8px] font-black italic shadow-sm">VISA</div>
+                      </div>
+                    </div>
+                    {paymentMethod === "card" && (
+                      <div className="space-y-3 mt-3 animate-in slide-in-from-top-2 duration-300">
+                        <input type="text" placeholder="Card Number" value={cardNumber} onChange={(e) => setCardNumber(e.target.value.replace(/\D/g, '').slice(0, 16))} className="w-full border-2 border-brand-100 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 bg-white" />
+                        <div className="flex gap-3">
+                          <input type="text" placeholder="MM/YY" value={cardExpiry} onChange={(e) => setCardExpiry(e.target.value)} className="flex-1 border-2 border-brand-100 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 bg-white" />
+                          <input type="password" placeholder="CVV" value={cardCvv} onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, '').slice(0, 3))} className="w-24 border-2 border-brand-100 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 bg-white" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {/* Cash on Delivery */}
+                  <div
+                    onClick={() => setPaymentMethod("cod")}
+                    className={`p-5 border-2 rounded-2xl cursor-pointer transition-all duration-300 ${paymentMethod === "cod" ? 'border-brand-500 bg-brand-50 shadow-lg shadow-brand/10' : 'border-slate2-100 hover:border-slate2-200 hover:bg-slate2-50'}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-4 h-4 rounded-full border-2 transition-all ${paymentMethod === "cod" ? 'border-brand-500 bg-brand-500' : 'border-slate2-300'}`} />
+                        <div>
+                          <span className="font-bold text-slate2-900">Cash on Delivery</span>
+                          <p className="text-[10px] text-slate2-400 font-bold uppercase tracking-widest mt-0.5">Pay after service</p>
+                        </div>
+                      </div>
+                      <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shadow-sm">
+                        <IndianRupee className="w-5 h-5 text-emerald-600" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsProcessingPayment(true);
+                    setTimeout(() => {
+                      setIsProcessingPayment(false);
+                      setBStep(5);
+                      showToast("Payment successful!");
+                    }, 2200);
+                  }}
+                  disabled={isProcessingPayment}
+                  className="w-full bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-brand/25 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isProcessingPayment ? (
+                    <>
+                      <RefreshCcw className="w-5 h-5 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      Pay ₹{bData.sub?.p ? bData.sub.p + Math.round(bData.sub.p * 0.05) : 0}
+                      <ChevronRight className="w-5 h-5" />
+                    </>
+                  )}
+                </button>
+                <button 
+                  onClick={() => setBStep(3)} 
+                  className="w-full mt-4 py-2 text-slate2-400 text-sm font-bold hover:text-slate2-600 transition-colors flex items-center justify-center gap-1"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Back
+                </button>
+              </div>
+            )}
+            {bStep === 5 && (
+              <div>
+                <p className="text-xs font-bold text-slate2-500 uppercase tracking-widest mb-4">Booking Summary</p>
+                <div className="bg-slate2-50 p-4 rounded-xl mb-4">
+                  <div className="flex justify-between font-bold mb-2 text-slate-800"><span>{selSvc?.name}</span><span>₹{bData.sub?.p}</span></div>
+                  <div className="text-sm text-slate2-500 mb-1">Type: {bData.sub?.n}</div>
+                  <div className="text-sm text-slate2-500 mb-1">Date: {bData.date}</div>
+                  <div className="text-sm text-slate2-500 mb-1">Time: {bData.time}</div>
+                  <div className="text-sm text-slate2-500 mb-1">Professional: {bData.pro}</div>
+                  <div className="text-sm text-slate2-500 mb-1">Mobile: +91 {mobileNumber}</div>
+                  <div className="text-sm text-slate2-500 mb-1">Payment: {paymentMethod.toUpperCase()}</div>
+                  <div className="border-t border-slate2-200 mt-2 pt-2 flex justify-between font-bold text-slate-800">
+                    <span>Total (incl. 5% GST)</span>
+                    <span>₹{bData.sub?.p ? bData.sub.p + Math.round(bData.sub.p * 0.05) : 0}</span>
+                  </div>
+                </div>
+                {/* Generate Prompt Button */}
+                <button
+                  onClick={() => {
+                    const prompt = `🛠️ ServiceHub Booking Summary
 
 Service: ${selSvc?.name}
 Sub-service: ${bData.sub?.n}
@@ -875,194 +1256,422 @@ Total Amount: ₹${bData.sub?.p ? bData.sub.p + Math.round(bData.sub.p * 0.05) :
 
 ---
 Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through ServiceHub. The service is scheduled for ${bData.date} at ${bData.time}. My assigned professional is ${bData.pro}. Please confirm the booking details and let me know if any additional information is needed. Thank you! 🙏`;
-                                setGeneratedPrompt(prompt);
-                                setIsPromptModalOpen(true);
-                            }}
-                            className="w-full mb-3 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all"
-                        >
-                            <Wand2 className="w-4 h-4" />
-                            ✨ Generate Prompt
-                        </button>
-                        <button onClick={placeOrder} className="w-full bg-brand-600 text-white font-bold py-3 rounded-xl">Confirm & Place Order</button>
-                        <button onClick={() => setBStep(4)} className="w-full mt-2 text-slate2-400 text-sm">← Back</button>
-                    </div>
-                )}
-                {bStep === 6 && (
-                    <div className="text-center py-6">
-                        <div className="w-20 h-20 rounded-full bg-brand-500 flex items-center justify-center text-4xl mx-auto mb-4 text-white">✓</div>
-                        <h3 className="text-2xl font-bold mb-2 text-slate-900">Order Confirmed!</h3>
-                        <p className="text-sm text-slate2-500 mb-4">Your booking has been placed successfully.</p>
-                        <button onClick={() => {setIsBookModalOpen(false); setView('dash'); setDashPanel('orders'); resetBookingState();}} className="bg-brand-600 text-white px-8 py-3 rounded-xl font-bold">View Orders</button>
-                    </div>
-                )}
-            </div>
+                    setGeneratedPrompt(prompt);
+                    setIsPromptModalOpen(true);
+                  }}
+                  className="w-full mb-3 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all"
+                >
+                  <Wand2 className="w-4 h-4" />
+                  ✨ Generate Prompt
+                </button>
+                <button 
+                  onClick={placeOrder} 
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-700 hover:to-teal-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-emerald-500/25 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 className="w-5 h-5" />
+                  Confirm & Place Order
+                </button>
+                <button 
+                  onClick={() => setBStep(4)} 
+                  className="w-full mt-4 py-2 text-slate2-400 text-sm font-bold hover:text-slate2-600 transition-colors flex items-center justify-center gap-1"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Back
+                </button>
+              </div>
+            )}
+            {bStep === 6 && (
+              <div className="text-center py-6">
+                <div className="w-20 h-20 rounded-full bg-brand-500 flex items-center justify-center text-4xl mx-auto mb-4 text-white">✓</div>
+                <h3 className="text-2xl font-bold mb-2 text-slate-900">Order Confirmed!</h3>
+                <p className="text-sm text-slate2-500 mb-4">Your booking has been placed successfully.</p>
+                <button onClick={() => { setIsBookModalOpen(false); setView('dash'); setDashPanel('orders'); resetBookingState(); }} className="bg-brand-600 text-white px-8 py-3 rounded-xl font-bold">View Orders</button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Generate Prompt Modal */}
       <div className={`modal-wrap ${isPromptModalOpen ? 'open' : ''}`} onClick={() => setIsPromptModalOpen(false)}>
         <div className="modal-box bg-white rounded-2xl w-full max-w-lg shadow-2xl relative overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="bg-gradient-to-br from-purple-600 to-violet-600 p-6">
-                <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                        <Wand2 className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                        <h3 className="text-xl font-bold text-white">AI Generated Prompt</h3>
-                        <p className="text-sm text-white/70">ServiceHub Customer Service</p>
-                    </div>
-                </div>
+          <div className="bg-gradient-to-br from-purple-600 to-violet-600 p-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                <Wand2 className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">AI Generated Prompt</h3>
+                <p className="text-sm text-white/70">ServiceHub Customer Service</p>
+              </div>
             </div>
-            <button onClick={() => setIsPromptModalOpen(false)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 text-white hover:bg-white/40 flex items-center justify-center text-lg transition-all z-10">x</button>
-            <div className="p-6">
-                <div className="bg-slate2-50 rounded-xl p-4 mb-4 max-h-[300px] overflow-y-auto">
-                    <pre className="text-sm text-slate2-700 whitespace-pre-wrap font-medium">{generatedPrompt}</pre>
-                </div>
-                <button
-                    onClick={() => {
-                        navigator.clipboard.writeText(generatedPrompt);
-                        showToast("Prompt copied to clipboard!");
-                    }}
-                    className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all"
-                >
-                    <Copy className="w-4 h-4" />
-                    Copy to Clipboard
-                </button>
+          </div>
+          <button onClick={() => setIsPromptModalOpen(false)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 text-white hover:bg-white/40 flex items-center justify-center text-lg transition-all z-10">x</button>
+          <div className="p-6">
+            <div className="bg-slate2-50 rounded-xl p-4 mb-4 max-h-[300px] overflow-y-auto">
+              <pre className="text-sm text-slate2-700 whitespace-pre-wrap font-medium">{generatedPrompt}</pre>
             </div>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(generatedPrompt);
+                showToast("Prompt copied to clipboard!");
+              }}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all"
+            >
+              <Copy className="w-4 h-4" />
+              Copy to Clipboard
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Feedback Modal */}
       <div className={`modal-wrap ${isFeedbackModalOpen ? 'open' : ''}`} onClick={() => setIsFeedbackModalOpen(false)}>
         <div className="modal-box bg-white rounded-2xl w-full max-w-lg shadow-2xl relative overflow-hidden max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="bg-gradient-to-br from-amber-500 to-orange-500 p-4 sm:p-6">
-                <div className="flex items-center gap-2 sm:gap-3">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                        <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+          <div className="bg-gradient-to-br from-amber-500 to-orange-500 p-4 sm:p-6">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg sm:text-xl font-bold text-white">Share Your Feedback</h3>
+                <p className="text-xs sm:text-sm text-white/70">Help us improve your experience</p>
+              </div>
+            </div>
+          </div>
+          <button onClick={() => setIsFeedbackModalOpen(false)} className="absolute top-3 right-3 sm:top-4 sm:right-4 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/20 text-white hover:bg-white/40 flex items-center justify-center text-base sm:text-lg transition-all z-10">x</button>
+          <div className="p-4 sm:p-6">
+            {/* Service Info */}
+            {(() => {
+              const order = orders.find(o => o.id === feedbackOrderId);
+              if (!order) return null;
+              return (
+                <div className="bg-slate2-50 rounded-xl p-4 mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-lg overflow-hidden">
+                      <img src={order.img} alt={order.service} className="w-full h-full object-cover" />
                     </div>
                     <div>
-                        <h3 className="text-lg sm:text-xl font-bold text-white">Share Your Feedback</h3>
-                        <p className="text-xs sm:text-sm text-white/70">Help us improve your experience</p>
+                      <p className="font-bold text-slate2-900">{order.service}</p>
+                      <p className="text-xs text-slate2-400">Professional: {order.pro}</p>
                     </div>
+                  </div>
                 </div>
+              );
+            })()}
+
+            {/* Service Rating */}
+            <div className="mb-4 sm:mb-6">
+              <p className="text-xs sm:text-sm font-bold text-slate2-700 mb-1.5 sm:mb-2">Rate the Service</p>
+              <div className="flex gap-1.5 sm:gap-2">
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button
+                    key={star}
+                    onClick={() => setFeedbackStars(star)}
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg border-2 border-slate2-200 flex items-center justify-center transition-all hover:border-amber-400"
+                  >
+                    <Star className={`w-5 h-5 sm:w-6 sm:h-6 ${star <= feedbackStars ? 'text-amber-400 fill-amber-400' : 'text-slate2-300'}`} />
+                  </button>
+                ))}
+              </div>
             </div>
-            <button onClick={() => setIsFeedbackModalOpen(false)} className="absolute top-3 right-3 sm:top-4 sm:right-4 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/20 text-white hover:bg-white/40 flex items-center justify-center text-base sm:text-lg transition-all z-10">x</button>
-            <div className="p-4 sm:p-6">
-                {/* Service Info */}
-                {(() => {
-                    const order = orders.find(o => o.id === feedbackOrderId);
-                    if (!order) return null;
-                    return (
-                        <div className="bg-slate2-50 rounded-xl p-4 mb-6">
-                            <div className="flex items-center gap-3">
-                                <div className="w-12 h-12 rounded-lg overflow-hidden">
-                                    <img src={order.img} alt={order.service} className="w-full h-full object-cover" />
-                                </div>
-                                <div>
-                                    <p className="font-bold text-slate2-900">{order.service}</p>
-                                    <p className="text-xs text-slate2-400">Professional: {order.pro}</p>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })()}
 
-                {/* Service Rating */}
-                <div className="mb-4 sm:mb-6">
-                    <p className="text-xs sm:text-sm font-bold text-slate2-700 mb-1.5 sm:mb-2">Rate the Service</p>
-                    <div className="flex gap-1.5 sm:gap-2">
-                        {[1, 2, 3, 4, 5].map(star => (
-                            <button
-                                key={star}
-                                onClick={() => setFeedbackStars(star)}
-                                className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg border-2 border-slate2-200 flex items-center justify-center transition-all hover:border-amber-400"
-                            >
-                                <Star className={`w-5 h-5 sm:w-6 sm:h-6 ${star <= feedbackStars ? 'text-amber-400 fill-amber-400' : 'text-slate2-300'}`} />
-                            </button>
-                        ))}
-                    </div>
-                </div>
+            {/* Worker Rating */}
+            <div className="mb-4 sm:mb-6">
+              <p className="text-xs sm:text-sm font-bold text-slate2-700 mb-1.5 sm:mb-2">Rate your Professional</p>
+              <div className="flex gap-1.5 sm:gap-2">
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button
+                    key={star}
+                    onClick={() => setFeedbackWorkerStars(star)}
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg border-2 border-slate2-200 flex items-center justify-center transition-all hover:border-amber-400"
+                  >
+                    <Star className={`w-5 h-5 sm:w-6 sm:h-6 ${star <= feedbackWorkerStars ? 'text-amber-400 fill-amber-400' : 'text-slate2-300'}`} />
+                  </button>
+                ))}
+              </div>
+            </div>
 
-                {/* Worker Rating */}
-                <div className="mb-4 sm:mb-6">
-                    <p className="text-xs sm:text-sm font-bold text-slate2-700 mb-1.5 sm:mb-2">Rate your Professional</p>
-                    <div className="flex gap-1.5 sm:gap-2">
-                        {[1, 2, 3, 4, 5].map(star => (
-                            <button
-                                key={star}
-                                onClick={() => setFeedbackWorkerStars(star)}
-                                className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg border-2 border-slate2-200 flex items-center justify-center transition-all hover:border-amber-400"
-                            >
-                                <Star className={`w-5 h-5 sm:w-6 sm:h-6 ${star <= feedbackWorkerStars ? 'text-amber-400 fill-amber-400' : 'text-slate2-300'}`} />
-                            </button>
-                        ))}
-                    </div>
-                </div>
+            {/* Comment */}
+            <div className="mb-4 sm:mb-6">
+              <p className="text-xs sm:text-sm font-bold text-slate2-700 mb-1.5 sm:mb-2">Your Experience</p>
+              <textarea
+                placeholder="Tell us about your experience..."
+                value={feedbackComment}
+                onChange={(e) => setFeedbackComment(e.target.value)}
+                className="w-full border border-slate2-200 rounded-xl px-3 py-2.5 sm:px-4 sm:py-3 text-sm outline-none focus:border-brand-500 transition-all resize-none h-20 sm:h-24"
+              />
+            </div>
 
-                {/* Comment */}
-                <div className="mb-4 sm:mb-6">
-                    <p className="text-xs sm:text-sm font-bold text-slate2-700 mb-1.5 sm:mb-2">Your Experience</p>
-                    <textarea
-                        placeholder="Tell us about your experience..."
-                        value={feedbackComment}
-                        onChange={(e) => setFeedbackComment(e.target.value)}
-                        className="w-full border border-slate2-200 rounded-xl px-3 py-2.5 sm:px-4 sm:py-3 text-sm outline-none focus:border-brand-500 transition-all resize-none h-20 sm:h-24"
-                    />
-                </div>
-
-                {/* Tags */}
-                <div className="mb-4 sm:mb-6">
-                    <p className="text-xs sm:text-sm font-bold text-slate2-700 mb-1.5 sm:mb-2">Quick Tags</p>
-                    <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                        {["On Time", "Clean Work", "Friendly", "Professional", "Would Rebook"].map(tag => (
-                            <button
-                                key={tag}
-                                onClick={() => {
-                                    if (feedbackTags.includes(tag)) {
-                                        setFeedbackTags(feedbackTags.filter(t => t !== tag));
-                                    } else {
-                                        setFeedbackTags([...feedbackTags, tag]);
-                                    }
-                                }}
-                                className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-semibold transition-all ${feedbackTags.includes(tag) ? 'bg-brand-500 text-white' : 'bg-slate2-100 text-slate2-600 hover:bg-slate2-200'}`}
-                            >
-                                {tag}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Submit */}
-                <button
+            {/* Tags */}
+            <div className="mb-4 sm:mb-6">
+              <p className="text-xs sm:text-sm font-bold text-slate2-700 mb-1.5 sm:mb-2">Quick Tags</p>
+              <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                {["On Time", "Clean Work", "Friendly", "Professional", "Would Rebook"].map(tag => (
+                  <button
+                    key={tag}
                     onClick={() => {
-                        if (feedbackStars === 0 || feedbackWorkerStars === 0) {
-                            showToast("Please provide both ratings");
-                            return;
-                        }
-                        const newFeedback = {
-                            orderId: feedbackOrderId || "",
-                            stars: feedbackStars,
-                            workerStars: feedbackWorkerStars,
-                            comment: feedbackComment,
-                            tags: feedbackTags,
-                            createdAt: new Date().toLocaleDateString('en-IN')
-                        };
-                        setFeedbacks([...feedbacks, newFeedback]);
-                        setOrders(orders.map(o => o.id === feedbackOrderId ? { ...o, status: "reviewed" } : o));
-                        setIsFeedbackModalOpen(false);
-                        setFeedbackStars(0);
-                        setFeedbackWorkerStars(0);
-                        setFeedbackComment("");
-                        setFeedbackTags([]);
-                        setFeedbackOrderId(null);
-                        showToast("Thank you for your feedback! ⭐");
+                      if (feedbackTags.includes(tag)) {
+                        setFeedbackTags(feedbackTags.filter(t => t !== tag));
+                      } else {
+                        setFeedbackTags([...feedbackTags, tag]);
+                      }
                     }}
-                    className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-2.5 sm:py-3 rounded-xl flex items-center justify-center gap-2 transition-all text-sm sm:text-base"
-                >
-                    <ThumbsUp className="w-4 h-4" />
-                    Submit Feedback
-                </button>
+                    className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-semibold transition-all ${feedbackTags.includes(tag) ? 'bg-brand-500 text-white' : 'bg-slate2-100 text-slate2-600 hover:bg-slate2-200'}`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {/* Submit */}
+            <button
+              onClick={async () => {
+                if (feedbackStars === 0 || feedbackWorkerStars === 0) {
+                  showToast("Please provide both ratings");
+                  return;
+                }
+
+                const order = orders.find(o => o.id === feedbackOrderId);
+
+                try {
+                  if (order && order._id) {
+                    const response = await fetch("/api/feedback", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        bookingId: order._id,
+                        serviceStars: feedbackStars,
+                        workerStars: feedbackWorkerStars,
+                        comment: feedbackComment,
+                        tags: feedbackTags,
+                      }),
+                    });
+                    const result = await response.json();
+                    if (!result.success) {
+                      showToast(result.error || "Failed to submit feedback");
+                      return;
+                    }
+                  }
+                } catch (e) {
+                  console.error(e);
+                  showToast("Failed to submit feedback");
+                  return;
+                }
+
+                const newFeedback = {
+                  orderId: feedbackOrderId || "",
+                  stars: feedbackStars,
+                  workerStars: feedbackWorkerStars,
+                  comment: feedbackComment,
+                  tags: feedbackTags,
+                  createdAt: new Date().toLocaleDateString('en-IN')
+                };
+                setFeedbacks([...feedbacks, newFeedback]);
+                setOrders(orders.map(o => o.id === feedbackOrderId ? { ...o, status: "reviewed" } : o));
+                setIsFeedbackModalOpen(false);
+                setFeedbackStars(0);
+                setFeedbackWorkerStars(0);
+                setFeedbackComment("");
+                setFeedbackTags([]);
+                setFeedbackOrderId(null);
+                showToast("Thank you for your feedback! ⭐");
+              }}
+              className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-2.5 sm:py-3 rounded-xl flex items-center justify-center gap-2 transition-all text-sm sm:text-base"
+            >
+              <ThumbsUp className="w-4 h-4" />
+              Submit Feedback
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Order Tracking Modal ─── */}
+      <div className={`modal-wrap ${isTrackingModalOpen ? 'open' : ''}`} onClick={() => setIsTrackingModalOpen(false)}>
+        <div className="modal-box bg-white rounded-2xl w-full max-w-lg shadow-2xl relative overflow-hidden max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          {/* Header */}
+          <div className="bg-gradient-to-br from-brand-600 to-brand-500 p-5">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-white/20 flex items-center justify-center">
+                <Clock className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Order Tracking</h3>
+                <p className="text-xs text-white/70">Live status of your booking</p>
+              </div>
+            </div>
+          </div>
+          <button onClick={() => setIsTrackingModalOpen(false)} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/20 text-white hover:bg-white/40 flex items-center justify-center font-bold z-10">✕</button>
+
+          {trackingOrder && (
+            <div className="p-5 space-y-4">
+              {/* Order Info Card */}
+              <div className="bg-brand-50 border border-brand-100 rounded-xl p-4 flex items-center gap-3">
+                <img src={trackingOrder.img} alt={trackingOrder.service} className="w-14 h-14 rounded-lg object-cover shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-slate2-900 truncate">{trackingOrder.service}</p>
+                  <p className="text-xs text-slate2-500 mt-0.5">{trackingOrder.sub}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs font-bold text-brand-600">₹{trackingOrder.price}</span>
+                    <span className="text-slate2-300">·</span>
+                    <span className="text-xs text-slate2-500">{trackingOrder.date}</span>
+                    <span className="text-slate2-300">·</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${trackingOrder.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+                      trackingOrder.status === 'confirmed' ? 'bg-brand-100 text-brand-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>{trackingOrder.status}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Worker Info */}
+              <div className="bg-slate2-50 rounded-xl p-4 flex items-center gap-3 border border-slate2-100">
+                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                  {(trackingOrder.pro || 'R').charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1">
+                  <p className="font-bold text-slate2-900 text-sm">{trackingOrder.pro || 'Ramesh Kumar'}</p>
+                  <p className="text-xs text-slate2-500">Assigned Professional</p>
+                  <p className="text-xs text-brand-600 font-semibold mt-0.5">📞 +91 98765 43210</p>
+                </div>
+                <div className="text-right">
+                  <div className="flex items-center gap-1">
+                    <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                    <span className="text-sm font-bold text-slate2-900">4.8</span>
+                  </div>
+                  <p className="text-[10px] text-slate2-500">Rating</p>
+                </div>
+              </div>
+
+              {/* Tracking Timeline */}
+              <div className="bg-white rounded-xl border border-slate2-100 p-4">
+                <p className="text-xs font-bold text-slate2-500 uppercase tracking-widest mb-4">Live Tracking</p>
+                {[
+                  { key: 'booked', label: 'Booking Placed', desc: 'Your booking has been received', time: trackingOrder.createdAt || 'Just now', done: true },
+                  { key: 'confirmed', label: 'Booking Confirmed', desc: 'Your booking is confirmed', time: '10 mins later', done: trackingOrder.status !== 'pending' },
+                  { key: 'assigned', label: 'Professional Assigned', desc: `${trackingOrder.pro || 'Ramesh Kumar'} will serve you`, time: 'Today', done: trackingOrder.status === 'confirmed' || trackingOrder.status === 'completed' || trackingOrder.status === 'in_progress' },
+                  { key: 'onway', label: 'Professional On The Way', desc: 'Estimated arrival in ~30 min', time: trackingOrder.time || '10:00 AM', done: trackingOrder.status === 'in_progress' || trackingOrder.status === 'completed' },
+                  { key: 'completed', label: 'Service Completed', desc: 'Thank you for using ServiceHub!', time: '', done: trackingOrder.status === 'completed' },
+                ].map((step, i, arr) => (
+                  <div key={step.key} className="flex items-start gap-3 mb-1">
+                    <div className="flex flex-col items-center">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${step.done ? 'bg-brand-600 text-white' : 'bg-slate2-100 text-slate2-400'
+                        }`}>
+                        {step.done ? <CheckCircle2 className="w-4 h-4" /> : <span>{i + 1}</span>}
+                      </div>
+                      {i < arr.length - 1 && <div className={`w-0.5 h-8 mt-1 ${step.done ? 'bg-brand-400' : 'bg-slate2-200'}`} />}
+                    </div>
+                    <div className="flex-1 pb-4">
+                      <p className={`text-sm font-bold ${step.done ? 'text-slate2-900' : 'text-slate2-400'}`}>{step.label}</p>
+                      <p className="text-xs text-slate2-500">{step.desc}</p>
+                      {step.time && step.done && <p className="text-[10px] text-brand-600 font-semibold mt-0.5">{step.time}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Order ID */}
+              <div className="flex items-center justify-between bg-slate2-50 rounded-xl px-4 py-3 border border-slate2-100">
+                <span className="text-xs font-bold text-slate2-500">Order ID</span>
+                <span className="text-sm font-bold text-slate2-900 font-mono">{trackingOrder.id}</span>
+              </div>
+
+              <button
+                onClick={() => setIsTrackingModalOpen(false)}
+                className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl transition-all text-sm"
+              >
+                Close Tracking
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Live Chat Modal */}
+      <div className={`modal-wrap ${isLiveChatOpen ? 'open' : ''}`} onClick={() => setIsLiveChatOpen(false)}>
+        <div className="modal-box bg-white rounded-2xl w-full max-w-2xl shadow-2xl relative overflow-hidden" style={{ height: '600px' }} onClick={e => e.stopPropagation()}>
+          <div className="bg-gradient-to-br from-green-500 to-emerald-500 p-4 sm:p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                  <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg sm:text-xl font-bold text-white">Live Chat Support</h3>
+                  <p className="text-xs sm:text-sm text-white/70">We typically reply in minutes</p>
+                </div>
+              </div>
+              <button onClick={() => setIsLiveChatOpen(false)} className="w-8 h-8 rounded-full bg-white/20 text-white hover:bg-white/40 flex items-center justify-center text-lg transition-all">x</button>
+            </div>
+          </div>
+
+          <div className="flex flex-col h-[calc(100%-80px)]">
+            {/* Chat Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+              {chatMessages.length === 0 && (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <MessageCircle className="w-8 h-8 text-green-600" />
+                  </div>
+                  <p className="text-gray-600 font-medium">Start a conversation</p>
+                  <p className="text-sm text-gray-400 mt-1">Our support team is here to help!</p>
+                </div>
+              )}
+
+              {chatMessages.map((msg) => (
+                <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-xs sm:max-w-md px-4 py-2 rounded-2xl ${msg.sender === 'user'
+                    ? 'bg-brand-600 text-white'
+                    : 'bg-white border border-gray-200 text-gray-800'
+                    }`}>
+                    <p className="text-sm">{msg.message}</p>
+                    <p className={`text-xs mt-1 ${msg.sender === 'user' ? 'text-brand-200' : 'text-gray-400'
+                      }`}>
+                      {msg.timestamp}
+                    </p>
+                  </div>
+                </div>
+              ))}
+
+              {isTyping && (
+                <div className="flex justify-start">
+                  <div className="bg-white border border-gray-200 px-4 py-2 rounded-2xl">
+                    <div className="flex space-x-1">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Chat Input */}
+            <div className="p-4 border-t border-gray-200 bg-white">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && chatInput.trim()) {
+                      handleSendMessage();
+                    }
+                  }}
+                  placeholder="Type your message..."
+                  className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 transition-all"
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!chatInput.trim()}
+                  className="bg-brand-600 hover:bg-brand-700 disabled:bg-gray-300 text-white px-4 py-3 rounded-xl transition-all"
+                >
+                  <MessageCircle className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1071,26 +1680,28 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-4 py-2 sm:py-2.5">
           <div className="flex items-center gap-2 sm:gap-6">
             {/* Mobile Hamburger Menu */}
-            <button 
+            <button
               onClick={() => setIsMobileMenuOpen(true)}
               className="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate2-50 transition-all"
             >
               <Menu className="w-5 h-5 text-slate2-700" />
             </button>
-            
+
             <button onClick={() => setView('main')} className="font-display text-xl sm:text-2xl font-bold text-slate2-900 shrink-0 outline-none">
               Service<span className="text-brand-600">Hub</span>
             </button>
-            
+
             {/* Location Selector - Hidden on mobile */}
-            <div className="hidden lg:flex items-center gap-3 px-4 py-2 border border-slate2-200 rounded-xl bg-slate2-50 cursor-pointer hover:border-brand-500 transition-all group">
+            <div onClick={() => setIsLocationModalOpen(true)} className="hidden lg:flex items-center gap-3 px-4 py-2 border border-slate2-200 rounded-xl bg-slate2-50 cursor-pointer hover:border-brand-500 transition-all group">
               <div className="w-8 h-8 rounded-full bg-rose-50 flex items-center justify-center">
                 <MapPin className="w-4 h-4 text-rose-500 fill-rose-500/20" />
               </div>
               <div className="flex flex-col">
                 <span className="text-[10px] font-bold text-slate2-400 uppercase tracking-widest leading-none mb-0.5">Deliver To</span>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[13px] font-bold text-slate2-900 leading-none">Ranchi, Jharkhand</span>
+                  <span className="text-[13px] font-bold text-slate2-900 leading-none">
+                    {isDetectingLocation ? "Detecting location..." : currentLocation}
+                  </span>
                   <ChevronDown className="w-3.5 h-3.5 text-slate2-400 group-hover:text-brand-500 transition-colors" />
                 </div>
               </div>
@@ -1103,8 +1714,8 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
               <div className="absolute inset-y-0 left-0 pl-4 pr-2 flex items-center pointer-events-none">
                 <Search className="w-4 h-4 text-slate2-400 group-focus-within:text-brand-500 transition-colors" />
               </div>
-              <input 
-                placeholder='Search "AC repair", "cleaning", "plumber"...' 
+              <input
+                placeholder='Search "AC repair", "cleaning", "plumber"...'
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -1113,7 +1724,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                 onFocus={() => setShowSearchResults(searchQuery.length > 0)}
                 className="w-full bg-slate2-50 border border-slate2-200 rounded-2xl pl-10 pr-24 py-3 text-sm outline-none text-slate-800 placeholder:text-slate2-400 font-medium shadow-sm group-focus-within:border-brand-500 group-focus-within:bg-white group-focus-within:shadow-lg group-focus-within:shadow-brand/20 transition-all"
               />
-              <button 
+              <button
                 onClick={() => {
                   if (searchQuery.trim()) {
                     setShowSearchResults(true);
@@ -1126,18 +1737,18 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                   <span className="hidden sm:inline">Search</span>
                 </div>
               </button>
-              
+
               {/* Search Results Dropdown */}
               {showSearchResults && searchQuery.trim() && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate2-200 max-h-[400px] overflow-y-auto z-[300]">
-                  {SERVICES.filter(s => 
+                  {SERVICES.filter(s =>
                     s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                     s.cat.toLowerCase().includes(searchQuery.toLowerCase()) ||
                     s.subs.some(sub => sub.n.toLowerCase().includes(searchQuery.toLowerCase()))
                   ).length > 0 ? (
                     <div className="p-2">
                       <p className="text-xs font-bold text-slate2-400 px-3 py-2 uppercase tracking-wider">Services</p>
-                      {SERVICES.filter(s => 
+                      {SERVICES.filter(s =>
                         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         s.cat.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         s.subs.some(sub => sub.n.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -1147,13 +1758,13 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                           onClick={() => {
                             setSelSvc(s);
                             setBStep(1);
-                            const tomorrow = new Date();
-                            tomorrow.setDate(tomorrow.getDate() + 1);
+                            const today = new Date();
+                            // Use today instead of tomorrow
                             setBData({
                               ...bData,
                               sub: s.subs[0],
                               pro: PROS[0].name,
-                              date: tomorrow.toLocaleDateString('en-IN'),
+                              date: today.toLocaleDateString('en-IN'),
                               time: "10:00 AM"
                             });
                             setIsBookModalOpen(true);
@@ -1205,11 +1816,11 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                     </div>
                     <ChevronDown className={`w-4 h-4 text-slate2-400 transition-transform duration-200 ${isProfileDropdownOpen ? 'rotate-180' : ''}`} />
                   </button>
-                  
+
                   {isProfileDropdownOpen && (
                     <>
-                      <div 
-                        className="fixed inset-0 z-10" 
+                      <div
+                        className="fixed inset-0 z-10"
                         onClick={() => setIsProfileDropdownOpen(false)}
                       />
                       <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-slate2-100 overflow-hidden z-20">
@@ -1224,7 +1835,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                             </div>
                           </div>
                         </div>
-                        
+
                         <div className="p-2">
                           <button
                             onClick={() => { setView('dash'); setDashPanel('overview'); setIsProfileDropdownOpen(false); }}
@@ -1236,7 +1847,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                               <div className="text-xs text-slate2-400">View overview</div>
                             </div>
                           </button>
-                          
+
                           <button
                             onClick={() => { setView('dash'); setDashPanel('orders'); setIsProfileDropdownOpen(false); }}
                             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate2-50 transition-colors text-left"
@@ -1247,7 +1858,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                               <div className="text-xs text-slate2-400">Track bookings</div>
                             </div>
                           </button>
-                          
+
                           <button
                             onClick={() => { setView('dash'); setDashPanel('profile'); setIsProfileDropdownOpen(false); }}
                             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate2-50 transition-colors text-left"
@@ -1258,9 +1869,9 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                               <div className="text-xs text-slate2-400">Manage account</div>
                             </div>
                           </button>
-                          
+
                           <div className="border-t border-slate2-100 my-2" />
-                          
+
                           <button
                             onClick={handleLogout}
                             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 transition-colors text-left"
@@ -1284,11 +1895,11 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                   <span className="text-[10px] font-bold text-slate2-500 group-hover:text-brand-600">Account</span>
                 </button>
               )}
-              <button 
+              <button
                 onClick={() => {
-                  if(!currentUser) { setIsAuthModalOpen(true); showToast("Sign in to view orders"); }
+                  if (!currentUser) { setIsAuthModalOpen(true); showToast("Sign in to view orders"); }
                   else { setView('dash'); setDashPanel('orders'); }
-                }} 
+                }}
                 className="flex flex-col items-center gap-1 text-slate2-600 hover:text-brand-600 transition-all group"
               >
                 <div className="p-1.5 rounded-lg group-hover:bg-brand-50 transition-colors">
@@ -1298,7 +1909,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
               </button>
             </div>
           </div>
-          
+
           {/* Mobile Icons - Only icons visible */}
           <div className="flex lg:hidden items-center gap-1">
             {!isLoaded ? (
@@ -1320,51 +1931,59 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
           </div>
         </div>
       </header>
-      
+
       {/* Mobile Menu Bottom Drawer */}
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-[300] lg:hidden">
-          <div 
+          <div
             className="absolute inset-0 bg-black/50"
             onClick={() => setIsMobileMenuOpen(false)}
           />
           <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl max-h-[85vh] overflow-y-auto animate-slide-up">
             <div className="sticky top-0 bg-white border-b border-slate2-100 p-4 flex items-center justify-between">
               <h3 className="font-bold text-lg text-slate2-900">Menu</h3>
-              <button 
+              <button
                 onClick={() => setIsMobileMenuOpen(false)}
                 className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate2-100 transition-all"
               >
                 <X className="w-5 h-5 text-slate2-600" />
               </button>
             </div>
-            
+
             <div className="p-4 space-y-4">
               {/* Search in Mobile Menu */}
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                   <Search className="w-4 h-4 text-slate2-400" />
                 </div>
-                <input 
-                  placeholder='Search services...' 
+                <input
+                  placeholder='Search services...'
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full bg-slate2-50 border border-slate2-200 rounded-xl pl-10 pr-4 py-3 text-sm outline-none focus:border-brand-500 transition-all"
                 />
               </div>
-              
+
               {/* Location */}
-              <button className="w-full flex items-center gap-3 p-3 bg-slate2-50 rounded-xl">
+              <button
+                onClick={() => {
+                  setIsLocationModalOpen(true);
+                  setIsMobileMenuOpen(false);
+                }}
+                className="w-full flex items-center gap-3 p-3 bg-slate2-50 rounded-xl"
+              >
                 <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center">
                   <MapPin className="w-5 h-5 text-rose-500" />
                 </div>
                 <div className="text-left">
                   <p className="text-xs text-slate2-400">Deliver To</p>
-                  <p className="font-bold text-slate2-900">Ranchi, Jharkhand</p>
+                  <p className="font-bold text-slate2-900">
+                    {isDetectingLocation ? "Detecting..." : currentLocation}
+                  </p>
                 </div>
                 <ChevronDown className="w-4 h-4 text-slate2-400 ml-auto" />
               </button>
-              
+
               {/* Menu Items */}
               {currentUser ? (
                 <>
@@ -1375,7 +1994,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                     <LayoutDashboard className="w-5 h-5 text-slate2-400" />
                     <span className="font-bold text-slate2-900">Dashboard</span>
                   </button>
-                  
+
                   <button
                     onClick={() => { setView('dash'); setDashPanel('orders'); setIsMobileMenuOpen(false); }}
                     className="w-full flex items-center gap-3 p-3 hover:bg-slate2-50 rounded-xl transition-all"
@@ -1383,7 +2002,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                     <ShoppingBag className="w-5 h-5 text-slate2-400" />
                     <span className="font-bold text-slate2-900">My Orders</span>
                   </button>
-                  
+
                   <button
                     onClick={() => { setView('dash'); setDashPanel('profile'); setIsMobileMenuOpen(false); }}
                     className="w-full flex items-center gap-3 p-3 hover:bg-slate2-50 rounded-xl transition-all"
@@ -1391,7 +2010,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                     <User className="w-5 h-5 text-slate2-400" />
                     <span className="font-bold text-slate2-900">My Profile</span>
                   </button>
-                  
+
                   <div className="border-t border-slate2-100 pt-4">
                     <button
                       onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
@@ -1415,11 +2034,11 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
           </div>
         </div>
       )}
-      
+
       {/* Mobile Profile Bottom Sheet */}
       {isProfileDropdownOpen && (
         <div className="fixed inset-0 z-[300] lg:hidden">
-          <div 
+          <div
             className="absolute inset-0 bg-black/50"
             onClick={() => setIsProfileDropdownOpen(false)}
           />
@@ -1435,7 +2054,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                 </div>
               </div>
             </div>
-            
+
             <div className="p-4 space-y-2">
               <button
                 onClick={() => { setView('dash'); setDashPanel('overview'); setIsProfileDropdownOpen(false); }}
@@ -1444,7 +2063,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                 <LayoutDashboard className="w-5 h-5 text-slate2-400" />
                 <span className="font-bold text-slate2-900">Dashboard</span>
               </button>
-              
+
               <button
                 onClick={() => { setView('dash'); setDashPanel('orders'); setIsProfileDropdownOpen(false); }}
                 className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate2-50 transition-colors"
@@ -1452,7 +2071,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                 <ShoppingBag className="w-5 h-5 text-slate2-400" />
                 <span className="font-bold text-slate2-900">My Orders</span>
               </button>
-              
+
               <button
                 onClick={() => { setView('dash'); setDashPanel('profile'); setIsProfileDropdownOpen(false); }}
                 className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate2-50 transition-colors"
@@ -1460,9 +2079,9 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                 <User className="w-5 h-5 text-slate2-400" />
                 <span className="font-bold text-slate2-900">My Profile</span>
               </button>
-              
+
               <div className="border-t border-slate2-100 my-2" />
-              
+
               <button
                 onClick={() => { handleLogout(); setIsProfileDropdownOpen(false); }}
                 className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-50 transition-colors"
@@ -1493,7 +2112,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                       50,000+ Happy Customers
                     </div>
                     <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-display font-bold text-white mb-3 sm:mb-6 leading-[1.15]">
-                      {i === 0 ? <>Professional <span className="text-brand-400">Home Services</span><br className="hidden sm:block"/>at Your Doorstep</> : s.name}
+                      {i === 0 ? <>Professional <span className="text-brand-400">Home Services</span><br className="hidden sm:block" />at Your Doorstep</> : s.name}
                     </h1>
                     <p className="hidden sm:block text-white/70 text-base md:text-xl mb-6 md:mb-8 max-w-lg leading-relaxed font-medium">{s.desc}</p>
                     <div className="flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4">
@@ -1601,14 +2220,13 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                 { id: "pest", label: "Pest", icon: <Bug className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
                 { id: "furniture", label: "Carpentry", icon: <Lamp className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> },
               ].map(c => (
-                <button 
-                  key={c.id} 
-                  onClick={() => setSelectedCat(c.id)} 
-                  className={`category-tab shrink-0 flex items-center gap-1.5 sm:gap-2.5 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full text-xs sm:text-sm font-bold border whitespace-nowrap select-none ${
-                    selectedCat === c.id 
-                    ? 'bg-brand-600 border-brand-600 text-white shadow-brand scale-105' 
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedCat(c.id)}
+                  className={`category-tab shrink-0 flex items-center gap-1.5 sm:gap-2.5 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full text-xs sm:text-sm font-bold border whitespace-nowrap select-none ${selectedCat === c.id
+                    ? 'bg-brand-600 border-brand-600 text-white shadow-brand scale-105'
                     : 'bg-white border-slate2-200 text-slate2-700'
-                  }`}
+                    }`}
                 >
                   <span className={selectedCat === c.id ? 'text-white' : 'text-slate2-400'}>
                     {c.icon}
@@ -1759,7 +2377,7 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
                 {TESTIS.map((t, i) => (
                   <div key={i} className="bg-white rounded-3xl p-8 shadow-sm hover:shadow-xl transition-all duration-500 relative border border-slate2-100 group">
                     <div className="flex gap-1 mb-6">
-                      {[1,2,3,4,5].map(s => <Star key={s} className="w-4 h-4 text-amber-400 fill-current" />)}
+                      {[1, 2, 3, 4, 5].map(s => <Star key={s} className="w-4 h-4 text-amber-400 fill-current" />)}
                     </div>
                     <p className="text-slate2-600 font-medium leading-relaxed mb-8 italic">&ldquo;{t.text}&rdquo;</p>
                     <div className="flex items-center gap-4">
@@ -1785,47 +2403,47 @@ Hello! I have booked a ${selSvc?.name} service (${bData.sub?.n}) through Service
         </main>
       ) : (
         <div className="flex max-w-7xl mx-auto w-full flex-1">
-            <aside className="w-64 bg-slate2-900 min-h-full p-6 hidden md:block">
-                <div className="text-white mb-8">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-xl font-bold mb-3">{currentUser?.init}</div>
-                    <div className="font-bold truncate">{currentUser?.name}</div>
-                    <div className="text-xs text-slate2-400 truncate">{currentUser?.email}</div>
+          <aside className="w-64 bg-slate2-900 min-h-full p-6 hidden md:block">
+            <div className="text-white mb-8">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-xl font-bold mb-3">{currentUser?.init}</div>
+              <div className="font-bold truncate">{currentUser?.name}</div>
+              <div className="text-xs text-slate2-400 truncate">{currentUser?.email}</div>
+            </div>
+            <nav className="space-y-2">
+              {['overview', 'orders', 'profile', 'book-service', 'my-reviews'].map(p => (
+                <button key={p} onClick={() => setDashPanel(p)} className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${dashPanel === p ? 'bg-white/10 text-white' : 'text-slate2-400 hover:text-white'}`}>
+                  {p === 'book-service' ? 'BOOK SERVICE' : p === 'my-reviews' ? 'MY REVIEWS' : p.toUpperCase()}
+                </button>
+              ))}
+              <button onClick={handleLogout} className="w-full mt-8 px-4 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl text-sm font-bold transition-all">
+                LOGOUT
+              </button>
+            </nav>
+          </aside>
+          <main className="flex-1 p-6">
+            {dashPanel === 'overview' && (
+              <div>
+                <h2 className="text-2xl font-bold text-slate2-900 mb-6 font-display">Dashboard Overview</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                  <div className="bg-white p-6 rounded-xl shadow-card">
+                    <h3 className="font-bold text-slate2-900 mb-2">Total Orders</h3>
+                    <p className="text-3xl font-bold text-brand-600">{orders.length}</p>
+                  </div>
+                  <div className="bg-white p-6 rounded-xl shadow-card">
+                    <h3 className="font-bold text-slate2-900 mb-2">Pending Services</h3>
+                    <p className="text-3xl font-bold text-orange-600">2</p>
+                  </div>
+                  <div className="bg-white p-6 rounded-xl shadow-card">
+                    <h3 className="font-bold text-slate2-900 mb-2">Completed</h3>
+                    <p className="text-3xl font-bold text-green-600">3</p>
+                  </div>
                 </div>
-                <nav className="space-y-2">
-                    {['overview', 'orders', 'profile', 'book-service', 'my-reviews'].map(p => (
-                        <button key={p} onClick={() => setDashPanel(p)} className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${dashPanel === p ? 'bg-white/10 text-white' : 'text-slate2-400 hover:text-white'}`}>
-                            {p === 'book-service' ? 'BOOK SERVICE' : p === 'my-reviews' ? 'MY REVIEWS' : p.toUpperCase()}
-                        </button>
-                    ))}
-                    <button onClick={handleLogout} className="w-full mt-8 px-4 py-3 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl text-sm font-bold transition-all">
-                        LOGOUT
-                    </button>
-                </nav>
-            </aside>
-            <main className="flex-1 p-6">
-                {dashPanel === 'overview' && (
-                    <div>
-                        <h2 className="text-2xl font-bold text-slate2-900 mb-6 font-display">Dashboard Overview</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                            <div className="bg-white p-6 rounded-xl shadow-card">
-                                <h3 className="font-bold text-slate2-900 mb-2">Total Orders</h3>
-                                <p className="text-3xl font-bold text-brand-600">{orders.length}</p>
-                            </div>
-                            <div className="bg-white p-6 rounded-xl shadow-card">
-                                <h3 className="font-bold text-slate2-900 mb-2">Pending Services</h3>
-                                <p className="text-3xl font-bold text-orange-600">2</p>
-                            </div>
-                            <div className="bg-white p-6 rounded-xl shadow-card">
-                                <h3 className="font-bold text-slate2-900 mb-2">Completed</h3>
-                                <p className="text-3xl font-bold text-green-600">3</p>
-                            </div>
-                        </div>
-                        {/* Generate Prompt Button in Overview */}
-                        <button
-                            onClick={() => {
-                                if (orders.length > 0) {
-                                    const lastOrder = orders[0];
-                                    const prompt = `🛠️ ServiceHub Booking Summary
+                {/* Generate Prompt Button in Overview */}
+                <button
+                  onClick={() => {
+                    if (orders.length > 0) {
+                      const lastOrder = orders[0];
+                      const prompt = `🛠️ ServiceHub Booking Summary
 
 Service: ${lastOrder.service}
 Sub-service: ${lastOrder.sub}
@@ -1838,353 +2456,634 @@ Order ID: ${lastOrder.id}
 
 ---
 Hello! I have booked a ${lastOrder.service} service (${lastOrder.sub}) through ServiceHub. The service is scheduled for ${lastOrder.date} at ${lastOrder.time}. Please confirm the booking details and let me know if any additional information is needed. Thank you! 🙏`;
-                                    setGeneratedPrompt(prompt);
-                                    setIsPromptModalOpen(true);
-                                } else {
-                                    showToast("No orders to generate prompt");
-                                }
-                            }}
-                            className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-6 py-3 rounded-xl flex items-center gap-2 transition-all"
+                      setGeneratedPrompt(prompt);
+                      setIsPromptModalOpen(true);
+                    } else {
+                      showToast("No orders to generate prompt");
+                    }
+                  }}
+                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-6 py-3 rounded-xl flex items-center gap-2 transition-all"
+                >
+                  <Wand2 className="w-4 h-4" />
+                  ✨ Generate Prompt
+                </button>
+              </div>
+            )}
+            {dashPanel === 'orders' && (
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate2-900 mb-4 sm:mb-6 font-display">Your Orders</h2>
+                <div className="space-y-3 sm:space-y-4">
+                  {orders.map(o => (
+                    <div key={o.id} className="bg-white p-3 sm:p-4 rounded-xl shadow-card flex items-center gap-3 sm:gap-4 border border-slate2-100">
+                      <div className="relative w-12 h-12 sm:w-16 sm:h-16 rounded-lg overflow-hidden shrink-0">
+                        <img src={o.img} alt={o.service} className="h-full w-full object-cover" loading="lazy" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-slate2-900 text-sm sm:text-base truncate">{o.service}</div>
+                        <div className="text-[10px] sm:text-xs text-slate2-400">{o.date} · {o.time}</div>
+                      </div>
+                      <div className="text-right flex flex-col items-end gap-1.5 sm:gap-2">
+                        <button
+                          onClick={() => showOrderTracking(o)}
+                          className="text-xs font-bold text-brand-600 hover:text-brand-700 mb-1"
                         >
-                            <Wand2 className="w-4 h-4" />
-                            ✨ Generate Prompt
+                          Track Order
                         </button>
-                    </div>
-                )}
-                {dashPanel === 'orders' && (
-                    <div>
-                        <h2 className="text-xl sm:text-2xl font-bold text-slate2-900 mb-4 sm:mb-6 font-display">Your Orders</h2>
-                        <div className="space-y-3 sm:space-y-4">
-                            {orders.map(o => (
-                                 <div key={o.id} className="bg-white p-3 sm:p-4 rounded-xl shadow-card flex items-center gap-3 sm:gap-4 border border-slate2-100">
-                                     <div className="relative w-12 h-12 sm:w-16 sm:h-16 rounded-lg overflow-hidden shrink-0">
-                                         <img src={o.img} alt={o.service} className="h-full w-full object-cover" loading="lazy" />
-                                     </div>
-                                     <div className="flex-1 min-w-0">
-                                         <div className="font-bold text-slate2-900 text-sm sm:text-base truncate">{o.service}</div>
-                                         <div className="text-[10px] sm:text-xs text-slate2-400">{o.date} · {o.time}</div>
-                                     </div>
-                                     <div className="text-right flex flex-col items-end gap-1.5 sm:gap-2">
-                                         <button
-                                             onClick={() => showOrderTracking(o.id)}
-                                             className="text-xs font-bold text-brand-600 hover:text-brand-700 mb-1"
-                                         >
-                                             Track Order
-                                         </button>
-                                         <div className="font-bold text-slate2-900 text-sm sm:text-base">₹{o.price}</div>
-                                         <div className={`text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                                             o.status === "completed" ? "bg-emerald-100 text-emerald-700" :
-                                             o.status === "confirmed" ? "bg-brand-100 text-brand-700" :
-                                             o.status === "pending" ? "bg-amber-100 text-amber-700" :
-                                             "bg-slate2-100 text-slate2-600"
-                                         }`}>
-                                             {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
-                                         </div>
-                                         {(o.status === "confirmed" || o.status === "completed") && o.status !== "reviewed" && (
-                                             <button
-                                                 onClick={() => {
-                                                     setFeedbackOrderId(o.id);
-                                                     setIsFeedbackModalOpen(true);
-                                                 }}
-                                                 className="text-[9px] sm:text-[10px] bg-amber-100 text-amber-700 font-bold px-2 sm:px-3 py-0.5 sm:py-1 rounded-full hover:bg-amber-200 transition-all flex items-center gap-1"
-                                             >
-                                                 <MessageSquare className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                                                 Feedback
-                                             </button>
-                                         )}
-                                     </div>
-                                </div>
-                            ))}
-                            {orders.length === 0 && <div className="text-center py-16 sm:py-20 text-slate2-400 text-sm sm:text-base">No orders yet.</div>}
+                        <div className="font-bold text-slate2-900 text-sm sm:text-base">₹{o.price}</div>
+                        <div className={`text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${o.status === "completed" ? "bg-emerald-100 text-emerald-700" :
+                          o.status === "confirmed" ? "bg-brand-100 text-brand-700" :
+                            o.status === "pending" ? "bg-amber-100 text-amber-700" :
+                              "bg-slate2-100 text-slate2-600"
+                          }`}>
+                          {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
                         </div>
+                        <button
+                          onClick={() => {
+                            setFeedbackOrderId(o.id);
+                            setIsFeedbackModalOpen(true);
+                          }}
+                          className="text-[9px] sm:text-[10px] bg-amber-100 text-amber-700 font-bold px-2 sm:px-3 py-0.5 sm:py-1 rounded-full hover:bg-amber-200 transition-all flex items-center gap-1 mt-1"
+                        >
+                          <MessageSquare className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                          Feedback
+                        </button>
+                      </div>
                     </div>
-                )}
-                {dashPanel === 'profile' && (
-                    <div>
-                         <h2 className="text-xl sm:text-2xl font-bold text-slate2-900 mb-4 sm:mb-6 font-display">My Profile</h2>
-                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                             {/* Profile Form */}
-                             <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-card">
-                                 {/* Photo Section */}
-                                 <div className="flex flex-col items-center mb-4 sm:mb-6">
-                                     <div className="relative group">
-                                         {profilePhoto ? (
-                                             <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border-4 border-brand-100">
-                                                 <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
-                                             </div>
-                                         ) : (
-                                             <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-2xl sm:text-3xl font-bold text-white shadow-brand">
-                                                 {currentUser?.init}
-                                             </div>
-                                         )}
-                                         <button
-                                             onClick={() => fileInputRef.current?.click()}
-                                             className="absolute bottom-0 right-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-brand-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-lg"
-                                         >
-                                             <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                         </button>
-                                     </div>
-                                     <input
-                                         ref={fileInputRef}
-                                         type="file"
-                                         accept="image/*"
-                                         className="hidden"
-                                         onChange={(e) => {
-                                             const file = e.target.files?.[0];
-                                             if (file) {
-                                                 const reader = new FileReader();
-                                                 reader.onloadend = () => {
-                                                     setProfilePhoto(reader.result as string);
-                                                 };
-                                                 reader.readAsDataURL(file);
-                                             }
-                                         }}
-                                     />
-                                     <button
-                                         onClick={() => fileInputRef.current?.click()}
-                                         className="mt-2 sm:mt-3 text-xs sm:text-sm font-semibold text-brand-600 hover:text-brand-700 flex items-center gap-1"
-                                     >
-                                         <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                                         Upload Photo
-                                     </button>
-                                     {profilePhoto && (
-                                         <button
-                                             onClick={() => setProfilePhoto(null)}
-                                             className="mt-1 text-[10px] sm:text-xs text-red-500 hover:text-red-600"
-                                         >
-                                             Remove Photo
-                                         </button>
-                                     )}
-                                 </div>
-
-                                 {/* Edit Fields */}
-                                 <div className="space-y-4">
-                                     <div>
-                                         <label className="text-xs font-bold text-slate2-500 mb-1 block">Full Name</label>
-                                         <input
-                                             type="text"
-                                             value={profileName}
-                                             onChange={(e) => setProfileName(e.target.value)}
-                                             placeholder={currentUser?.name || "Enter your name"}
-                                             className="w-full border border-slate2-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-500 transition-all"
-                                         />
-                                     </div>
-                                     <div>
-                                         <label className="text-xs font-bold text-slate2-500 mb-1 block">Display Name / Nickname</label>
-                                         <input
-                                             type="text"
-                                             value={profileNickname}
-                                             onChange={(e) => setProfileNickname(e.target.value)}
-                                             placeholder="How should we call you?"
-                                             className="w-full border border-slate2-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-500 transition-all"
-                                         />
-                                     </div>
-                                     <div>
-                                         <label className="text-xs font-bold text-slate2-500 mb-1 block">Phone Number</label>
-                                         <input
-                                             type="tel"
-                                             value={profilePhone}
-                                             onChange={(e) => setProfilePhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                                             placeholder="10-digit mobile number"
-                                             className="w-full border border-slate2-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-500 transition-all"
-                                         />
-                                     </div>
-                                     <div>
-                                         <label className="text-xs font-bold text-slate2-500 mb-1 block">City</label>
-                                         <select
-                                             value={profileCity}
-                                             onChange={(e) => setProfileCity(e.target.value)}
-                                             className="w-full border border-slate2-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-500 transition-all bg-white"
-                                         >
-                                             <option value="Ranchi">Ranchi</option>
-                                             <option value="Patna">Patna</option>
-                                             <option value="Dhanbad">Dhanbad</option>
-                                             <option value="Jamshedpur">Jamshedpur</option>
-                                             <option value="Bokaro">Bokaro</option>
-                                             <option value="Hazaribagh">Hazaribagh</option>
-                                         </select>
-                                     </div>
-                                     <div>
-                                         <label className="text-xs font-bold text-slate2-500 mb-1 flex justify-between">
-                                             <span>Bio</span>
-                                             <span className="text-slate2-400">{profileBio.length}/150</span>
-                                         </label>
-                                         <textarea
-                                             value={profileBio}
-                                             onChange={(e) => setProfileBio(e.target.value.slice(0, 150))}
-                                             placeholder="Tell us a little about yourself..."
-                                             className="w-full border border-slate2-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-500 transition-all resize-none h-20"
-                                         />
-                                     </div>
-                                     <div className="flex items-center gap-3">
-                                         <button
-                                             onClick={() => {
-                                                 setProfileSaved(true);
-                                                 setTimeout(() => setProfileSaved(false), 2000);
-                                                 showToast("Profile updated successfully! ✅");
-                                             }}
-                                             className="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-bold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 transition-all"
-                                         >
-                                             <Edit3 className="w-4 h-4" />
-                                             Save Changes
-                                         </button>
-                                         {profileSaved && (
-                                             <div className="flex items-center gap-1 text-emerald-600 text-sm font-bold">
-                                                 <CheckCircle2 className="w-4 h-4" />
-                                                 Saved
-                                             </div>
-                                         )}
-                                     </div>
-                                 </div>
-                             </div>
-
-                             {/* Profile Preview Card */}
-                             <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-card">
-                                 <h3 className="text-[10px] sm:text-sm font-bold text-slate2-500 uppercase tracking-widest mb-3 sm:mb-4">Profile Preview</h3>
-                                 <div className="bg-gradient-to-br from-brand-50 to-accent-50 rounded-xl p-4 sm:p-6 border border-brand-100">
-                                     <div className="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
-                                         {profilePhoto ? (
-                                             <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl overflow-hidden border-2 border-white shadow-md">
-                                                 <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
-                                             </div>
-                                         ) : (
-                                             <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-lg sm:text-xl font-bold text-white shadow-brand">
-                                                 {currentUser?.init}
-                                             </div>
-                                         )}
-                                         <div>
-                                             <p className="font-bold text-slate2-900 text-base sm:text-lg">{profileName || currentUser?.name || "Your Name"}</p>
-                                             {profileNickname && <p className="text-xs sm:text-sm text-brand-600 font-semibold">"{profileNickname}"</p>}
-                                         </div>
-                                     </div>
-                                     <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm">
-                                         {profilePhone && (
-                                             <div className="flex items-center gap-2 text-slate2-600">
-                                                 <PhoneCall className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-500" />
-                                                 +91 {profilePhone}
-                                             </div>
-                                         )}
-                                         <div className="flex items-center gap-2 text-slate2-600">
-                                             <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-500" />
-                                             {profileCity}
-                                         </div>
-                                         <div className="flex items-center gap-2 text-slate2-600">
-                                             <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-500" />
-                                             Member since {new Date().toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
-                                         </div>
-                                     </div>
-                                     {profileBio && (
-                                         <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-brand-200">
-                                             <p className="text-xs sm:text-sm text-slate2-600 italic">"{profileBio}"</p>
-                                         </div>
-                                     )}
-                                 </div>
-                             </div>
-                         </div>
+                  ))}
+                  {orders.length === 0 && <div className="text-center py-16 sm:py-20 text-slate2-400 text-sm sm:text-base">No orders yet.</div>}
+                </div>
+              </div>
+            )}
+            {dashPanel === 'profile' && (
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate2-900 mb-4 sm:mb-6 font-display">My Profile</h2>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                  {/* Profile Form */}
+                  <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-card">
+                    {/* Photo Section */}
+                    <div className="flex flex-col items-center mb-4 sm:mb-6">
+                      <div className="relative group">
+                        {profilePhoto ? (
+                          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border-4 border-brand-100">
+                            <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-2xl sm:text-3xl font-bold text-white shadow-brand">
+                            {currentUser?.init}
+                          </div>
+                        )}
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="absolute bottom-0 right-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-brand-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-lg"
+                        >
+                          <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        </button>
+                      </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setProfilePhoto(reader.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="mt-2 sm:mt-3 text-xs sm:text-sm font-semibold text-brand-600 hover:text-brand-700 flex items-center gap-1"
+                      >
+                        <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        Upload Photo
+                      </button>
+                      {profilePhoto && (
+                        <button
+                          onClick={() => setProfilePhoto(null)}
+                          className="mt-1 text-[10px] sm:text-xs text-red-500 hover:text-red-600"
+                        >
+                          Remove Photo
+                        </button>
+                      )}
                     </div>
-                )}
-                {dashPanel === 'book-service' && (
-                    <div>
-                        <h2 className="text-xl sm:text-2xl font-bold text-slate2-900 mb-4 sm:mb-6 font-display">Book a Service</h2>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-                            {SERVICES.map(s => (
-                                <div key={s.id} className="bg-white rounded-xl shadow-card overflow-hidden border border-slate2-100 hover:shadow-lg transition-all">
-                                    <div className="relative h-24 sm:h-32 overflow-hidden">
-                                        <img src={s.img} alt={s.name} className="w-full h-full object-cover" loading="lazy" />
-                                    </div>
-                                    <div className="p-3 sm:p-4">
-                                        <h3 className="font-bold text-slate2-900 text-xs sm:text-sm mb-1 truncate">{s.name}</h3>
-                                        <p className="text-[10px] sm:text-xs text-brand-600 font-semibold mb-2 sm:mb-3">{s.price}</p>
-                                        <button
-                                            onClick={() => {
-                                                setSelSvc(s);
-                                                setBStep(1);
-                                                const tomorrow = new Date();
-                                                tomorrow.setDate(tomorrow.getDate() + 1);
-                                                setBData({
-                                                    ...bData,
-                                                    sub: s.subs[0],
-                                                    pro: PROS[0].name,
-                                                    date: tomorrow.toLocaleDateString('en-IN'),
-                                                    time: "10:00 AM"
-                                                });
-                                                setIsBookModalOpen(true);
-                                            }}
-                                            className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-2 rounded-lg text-xs transition-all"
-                                        >
-                                            Book Now
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
+
+                    {/* Edit Fields */}
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-xs font-bold text-slate2-500 mb-1 block">Full Name</label>
+                        <input
+                          type="text"
+                          value={profileName}
+                          onChange={(e) => setProfileName(e.target.value)}
+                          placeholder={currentUser?.name || "Enter your name"}
+                          className="w-full border border-slate2-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-500 transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate2-500 mb-1 block">Display Name / Nickname</label>
+                        <input
+                          type="text"
+                          value={profileNickname}
+                          onChange={(e) => setProfileNickname(e.target.value)}
+                          placeholder="How should we call you?"
+                          className="w-full border border-slate2-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-500 transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate2-500 mb-1 block">Phone Number</label>
+                        <input
+                          type="tel"
+                          value={profilePhone}
+                          onChange={(e) => setProfilePhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                          placeholder="10-digit mobile number"
+                          className="w-full border border-slate2-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-500 transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate2-500 mb-1 block">City</label>
+                        <select
+                          value={profileCity}
+                          onChange={(e) => setProfileCity(e.target.value)}
+                          className="w-full border border-slate2-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-500 transition-all bg-white"
+                        >
+                          <option value="Ranchi">Ranchi</option>
+                          <option value="Patna">Patna</option>
+                          <option value="Dhanbad">Dhanbad</option>
+                          <option value="Jamshedpur">Jamshedpur</option>
+                          <option value="Bokaro">Bokaro</option>
+                          <option value="Hazaribagh">Hazaribagh</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate2-500 mb-1 flex justify-between">
+                          <span>Bio</span>
+                          <span className="text-slate2-400">{profileBio.length}/150</span>
+                        </label>
+                        <textarea
+                          value={profileBio}
+                          onChange={(e) => setProfileBio(e.target.value.slice(0, 150))}
+                          placeholder="Tell us a little about yourself..."
+                          className="w-full border border-slate2-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-500 transition-all resize-none h-20"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => {
+                            setProfileSaved(true);
+                            setTimeout(() => setProfileSaved(false), 2000);
+                            showToast("Profile updated successfully! ✅");
+                          }}
+                          className="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-bold py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 transition-all"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                          Save Changes
+                        </button>
+                        {profileSaved && (
+                          <div className="flex items-center gap-1 text-emerald-600 text-sm font-bold">
+                            <CheckCircle2 className="w-4 h-4" />
+                            Saved
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Profile Preview Card */}
+                  <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-card">
+                    <h3 className="text-[10px] sm:text-sm font-bold text-slate2-500 uppercase tracking-widest mb-3 sm:mb-4">Profile Preview</h3>
+                    <div className="bg-gradient-to-br from-brand-50 to-accent-50 rounded-xl p-4 sm:p-6 border border-brand-100">
+                      <div className="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
+                        {profilePhoto ? (
+                          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl overflow-hidden border-2 border-white shadow-md">
+                            <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-lg sm:text-xl font-bold text-white shadow-brand">
+                            {currentUser?.init}
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-bold text-slate2-900 text-base sm:text-lg">{profileName || currentUser?.name || "Your Name"}</p>
+                          {profileNickname && <p className="text-xs sm:text-sm text-brand-600 font-semibold">"{profileNickname}"</p>}
                         </div>
+                      </div>
+                      <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm">
+                        {profilePhone && (
+                          <div className="flex items-center gap-2 text-slate2-600">
+                            <PhoneCall className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-500" />
+                            +91 {profilePhone}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 text-slate2-600">
+                          <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-500" />
+                          {profileCity}
+                        </div>
+                        <div className="flex items-center gap-2 text-slate2-600">
+                          <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-500" />
+                          Member since {new Date().toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                        </div>
+                      </div>
+                      {profileBio && (
+                        <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-brand-200">
+                          <p className="text-xs sm:text-sm text-slate2-600 italic">"{profileBio}"</p>
+                        </div>
+                      )}
                     </div>
-                )}
-                {dashPanel === 'my-reviews' && (
-                    <div>
-                        <h2 className="text-xl sm:text-2xl font-bold text-slate2-900 mb-4 sm:mb-6 font-display">My Reviews</h2>
-                        <div className="space-y-3 sm:space-y-4">
-                            {feedbacks.map((f, i) => {
-                                const order = orders.find(o => o.id === f.orderId);
-                                return (
-                                    <div key={i} className="bg-white p-3 sm:p-4 rounded-xl shadow-card border border-slate2-100">
-                                        <div className="flex items-start gap-3 sm:gap-4">
-                                            {order && (
-                                                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden shrink-0">
-                                                    <img src={order.img} alt={order.service} className="w-full h-full object-cover" />
-                                                </div>
-                                            )}
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center justify-between mb-1.5 sm:mb-2 gap-2">
-                                                    <p className="font-bold text-slate2-900 text-sm sm:text-base truncate">{order?.service || "Service"}</p>
-                                                    <span className="text-[10px] sm:text-xs text-slate2-400 shrink-0">{f.createdAt}</span>
-                                                </div>
-                                                <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-1.5 sm:mb-2">
-                                                    <div className="flex items-center gap-1">
-                                                        <span className="text-[10px] sm:text-xs text-slate2-500">Service:</span>
-                                                        <div className="flex gap-0.5">
-                                                            {[1,2,3,4,5].map(s => (
-                                                                <Star key={s} className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${s <= f.stars ? 'text-amber-400 fill-amber-400' : 'text-slate2-300'}`} />
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-1">
-                                                        <span className="text-[10px] sm:text-xs text-slate2-500">Worker:</span>
-                                                        <div className="flex gap-0.5">
-                                                            {[1,2,3,4,5].map(s => (
-                                                                <Star key={s} className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${s <= f.workerStars ? 'text-amber-400 fill-amber-400' : 'text-slate2-300'}`} />
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                {f.comment && (
-                                                    <p className="text-xs sm:text-sm text-slate2-600 mb-1.5 sm:mb-2 italic line-clamp-2">"{f.comment}"</p>
-                                                )}
-                                                {f.tags.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1">
-                                                        {f.tags.map(tag => (
-                                                            <span key={tag} className="text-[9px] sm:text-[10px] bg-brand-100 text-brand-700 px-1.5 sm:px-2 py-0.5 rounded-full font-semibold">
-                                                                {tag}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            {feedbacks.length === 0 && (
-                                <div className="text-center py-16 sm:py-20 text-slate2-400">
-                                    <MessageSquare className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-2 sm:mb-3 opacity-50" />
-                                    <p className="text-sm sm:text-base">No reviews yet.</p>
-                                    <p className="text-[10px] sm:text-xs mt-1">Complete a service and leave feedback!</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {dashPanel === 'book-service' && (
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate2-900 mb-4 sm:mb-6 font-display">Book a Service</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                  {SERVICES.map(s => (
+                    <div key={s.id} className="bg-white rounded-xl shadow-card overflow-hidden border border-slate2-100 hover:shadow-lg transition-all">
+                      <div className="relative h-24 sm:h-32 overflow-hidden">
+                        <img src={s.img} alt={s.name} className="w-full h-full object-cover" loading="lazy" />
+                      </div>
+                      <div className="p-3 sm:p-4">
+                        <h3 className="font-bold text-slate2-900 text-xs sm:text-sm mb-1 truncate">{s.name}</h3>
+                        <p className="text-[10px] sm:text-xs text-brand-600 font-semibold mb-2 sm:mb-3">{s.price}</p>
+                        <button
+                          onClick={() => {
+                            setSelSvc(s);
+                            setBStep(1);
+                            const tomorrow = new Date();
+                            tomorrow.setDate(tomorrow.getDate() + 1);
+                            setBData({
+                              ...bData,
+                              sub: s.subs[0],
+                              pro: PROS[0].name,
+                              date: tomorrow.toLocaleDateString('en-IN'),
+                              time: "10:00 AM"
+                            });
+                            setIsBookModalOpen(true);
+                          }}
+                          className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-2 rounded-lg text-xs transition-all"
+                        >
+                          Book Now
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {dashPanel === 'my-reviews' && (
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate2-900 mb-4 sm:mb-6 font-display">My Reviews</h2>
+                <div className="space-y-3 sm:space-y-4">
+                  {feedbacks.map((f, i) => {
+                    const order = orders.find(o => o.id === f.orderId);
+                    return (
+                      <div key={i} className="bg-white p-3 sm:p-4 rounded-xl shadow-card border border-slate2-100">
+                        <div className="flex items-start gap-3 sm:gap-4">
+                          {order && (
+                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden shrink-0">
+                              <img src={order.img} alt={order.service} className="w-full h-full object-cover" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1.5 sm:mb-2 gap-2">
+                              <p className="font-bold text-slate2-900 text-sm sm:text-base truncate">{order?.service || "Service"}</p>
+                              <span className="text-[10px] sm:text-xs text-slate2-400 shrink-0">{f.createdAt}</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-1.5 sm:mb-2">
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] sm:text-xs text-slate2-500">Service:</span>
+                                <div className="flex gap-0.5">
+                                  {[1, 2, 3, 4, 5].map(s => (
+                                    <Star key={s} className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${s <= f.stars ? 'text-amber-400 fill-amber-400' : 'text-slate2-300'}`} />
+                                  ))}
                                 </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] sm:text-xs text-slate2-500">Worker:</span>
+                                <div className="flex gap-0.5">
+                                  {[1, 2, 3, 4, 5].map(s => (
+                                    <Star key={s} className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${s <= f.workerStars ? 'text-amber-400 fill-amber-400' : 'text-slate2-300'}`} />
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                            {f.comment && (
+                              <p className="text-xs sm:text-sm text-slate2-600 mb-1.5 sm:mb-2 italic line-clamp-2">"{f.comment}"</p>
                             )}
+                            {f.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {f.tags.map(tag => (
+                                  <span key={tag} className="text-[9px] sm:text-[10px] bg-brand-100 text-brand-700 px-1.5 sm:px-2 py-0.5 rounded-full font-semibold">
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
+                      </div>
+                    );
+                  })}
+                  {feedbacks.length === 0 && (
+                    <div className="text-center py-16 sm:py-20 text-slate2-400">
+                      <MessageSquare className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-2 sm:mb-3 opacity-50" />
+                      <p className="text-sm sm:text-base">No reviews yet.</p>
+                      <p className="text-[10px] sm:text-xs mt-1">Complete a service and leave feedback!</p>
                     </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {dashPanel === 'help-center' && (
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate2-900 mb-4 sm:mb-6 font-display">Help Center</h2>
+
+                {/* ─── My Inquiries / Admin Replies ─── */}
+                {myInquiries.length > 0 && (
+                  <div className="mb-8 bg-white rounded-xl shadow-card border border-slate2-100">
+                    <div className="p-4 sm:p-5 border-b border-slate2-100 flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-violet-100 flex items-center justify-center">
+                        <MessageSquare className="w-5 h-5 text-violet-600" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-bold text-slate2-900">My Inquiries</h3>
+                        <p className="text-xs text-slate2-500">Track your support requests and admin replies</p>
+                      </div>
+                      {myInquiries.some(q => q.adminReply) && (
+                        <span className="bg-emerald-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">NEW REPLY</span>
+                      )}
+                    </div>
+                    <div className="divide-y divide-slate2-100 max-h-96 overflow-y-auto">
+                      {myInquiries.map((q: any) => (
+                        <div key={q._id} className="p-4 sm:p-5">
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-slate2-900 text-sm truncate">{q.subject || q.message.slice(0, 40)}</p>
+                              <p className="text-xs text-slate2-500 mt-0.5 line-clamp-1">{q.message}</p>
+                            </div>
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${q.status === 'resolved' ? 'bg-emerald-100 text-emerald-700' :
+                                q.status === 'in_review' ? 'bg-blue-100 text-blue-700' :
+                                  q.status === 'closed' ? 'bg-slate2-100 text-slate2-600' :
+                                    'bg-amber-100 text-amber-700'
+                                }`}>{q.status === 'in_review' ? 'In Review' : q.status.charAt(0).toUpperCase() + q.status.slice(1)}</span>
+                              <span className="text-[10px] text-slate2-400">{new Date(q.createdAt).toLocaleDateString('en-IN')}</span>
+                            </div>
+                          </div>
+                          {q.adminReply ? (
+                            <div className="mt-2 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
+                                  <CheckCircle2 className="w-2.5 h-2.5 text-white" />
+                                </div>
+                                <span className="text-xs font-black text-emerald-700">Admin Reply</span>
+                              </div>
+                              <p className="text-sm text-emerald-800 leading-relaxed">{q.adminReply}</p>
+                            </div>
+                          ) : (
+                            <div className="mt-2 bg-slate2-50 rounded-xl px-4 py-2.5 flex items-center gap-2">
+                              <Clock className="w-3.5 h-3.5 text-slate2-400" />
+                              <p className="text-xs text-slate2-500">Awaiting admin response...</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
-            </main>
+
+                {/* Quick Actions */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                  <div className="bg-white p-6 rounded-xl shadow-card border border-slate2-100 hover:shadow-lg transition-all cursor-pointer">
+                    <div className="w-12 h-12 rounded-xl bg-brand-100 flex items-center justify-center mb-4">
+                      <PhoneCall className="w-6 h-6 text-brand-600" />
+                    </div>
+                    <h3 className="font-bold text-slate2-900 mb-2">Call Support</h3>
+                    <p className="text-sm text-slate2-600 mb-3">Get instant help from our support team</p>
+                    <p className="text-lg font-bold text-brand-600">1800-123-4567</p>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-xl shadow-card border border-slate2-100 hover:shadow-lg transition-all cursor-pointer">
+                    <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center mb-4">
+                      <MessageCircle className="w-6 h-6 text-green-600" />
+                    </div>
+                    <h3 className="font-bold text-slate2-900 mb-2">Live Chat</h3>
+                    <p className="text-sm text-slate2-600 mb-3">Chat with our support team</p>
+                    <button onClick={() => setIsLiveChatOpen(true)} className="text-sm font-bold text-green-600 hover:text-green-700">Start Chat →</button>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-xl shadow-card border border-slate2-100 hover:shadow-lg transition-all cursor-pointer">
+                    <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center mb-4">
+                      <Mail className="w-6 h-6 text-purple-600" />
+                    </div>
+                    <h3 className="font-bold text-slate2-900 mb-2">Email Support</h3>
+                    <p className="text-sm text-slate2-600 mb-3">Send us your queries</p>
+                    <p className="text-sm font-bold text-purple-600">support@servicehub.com</p>
+                  </div>
+                </div>
+
+                {/* FAQs */}
+                <div className="bg-white rounded-xl shadow-card border border-slate2-100 mb-8">
+                  <div className="p-6 border-b border-slate2-100">
+                    <h3 className="text-lg font-bold text-slate2-900">Frequently Asked Questions</h3>
+                  </div>
+                  <div className="divide-y divide-slate2-100">
+                    <div className="p-6">
+                      <h4 className="font-bold text-slate2-900 mb-2">How do I book a service?</h4>
+                      <p className="text-sm text-slate2-600">Simply browse our services, select what you need, choose a date and time, and confirm your booking. Our professionals will be assigned to your request.</p>
+                    </div>
+                    <div className="p-6">
+                      <h4 className="font-bold text-slate2-900 mb-2">What payment methods are accepted?</h4>
+                      <p className="text-sm text-slate2-600">We accept all major credit/debit cards, UPI, net banking, and digital wallets. Payment is collected after service completion.</p>
+                    </div>
+                    <div className="p-6">
+                      <h4 className="font-bold text-slate2-900 mb-2">Can I reschedule or cancel my booking?</h4>
+                      <p className="text-sm text-slate2-600">Yes, you can reschedule or cancel your booking up to 2 hours before the scheduled time without any charges.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Enquiry Form */}
+                <div className="mt-8 bg-white rounded-xl shadow-card border border-slate2-100">
+                  <div className="p-6 border-b border-slate2-100">
+                    <h3 className="text-lg font-bold text-slate2-900">Send us an Enquiry</h3>
+                    <p className="text-sm text-slate2-600 mt-1">Have a question? Fill out the form below and we'll get back to you soon.</p>
+                  </div>
+                  <div className="p-6">
+                    {inquirySubmitted ? (
+                      /* ─── Success Screen ─── */
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mb-5 animate-bounce">
+                          <CheckCircle2 className="w-10 h-10 text-emerald-600" />
+                        </div>
+                        <h4 className="text-2xl font-black text-slate2-900 mb-2">Enquiry Submitted! 🎉</h4>
+                        <p className="text-slate2-600 mb-1">Your message has been sent to our support team.</p>
+                        <p className="text-sm text-slate2-400 mb-6">We'll get back to you at <span className="font-bold text-brand-600">{inquiryEmail}</span> within 24 hours.</p>
+                        <button
+                          onClick={() => {
+                            setInquirySubmitted(false);
+                            setInquiryName(""); setInquiryEmail(""); setInquiryPhone("");
+                            setInquirySubject(""); setInquiryMessage(""); setInquiryUrgent(false);
+                            setInquiryType("other");
+                          }}
+                          className="px-6 py-3 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 transition-all"
+                        >
+                          Submit Another Enquiry
+                        </button>
+                      </div>
+                    ) : (
+                      /* ─── Form ─── */
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <label className="block text-sm font-bold text-slate2-700 mb-2">Full Name *</label>
+                            <input
+                              type="text"
+                              value={inquiryName}
+                              onChange={e => setInquiryName(e.target.value)}
+                              placeholder="Enter your full name"
+                              className="w-full border border-slate2-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 transition-all"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-bold text-slate2-700 mb-2">Email Address *</label>
+                            <input
+                              type="email"
+                              value={inquiryEmail}
+                              onChange={e => setInquiryEmail(e.target.value)}
+                              placeholder="your.email@example.com"
+                              className="w-full border border-slate2-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 transition-all"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <label className="block text-sm font-bold text-slate2-700 mb-2">Phone Number</label>
+                            <input
+                              type="tel"
+                              value={inquiryPhone}
+                              onChange={e => setInquiryPhone(e.target.value)}
+                              placeholder="+91 98765 43210"
+                              className="w-full border border-slate2-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 transition-all"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-bold text-slate2-700 mb-2">Enquiry Type</label>
+                            <select
+                              value={inquiryType}
+                              onChange={e => setInquiryType(e.target.value)}
+                              className="w-full border border-slate2-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 transition-all"
+                            >
+                              <option value="other">Select enquiry type</option>
+                              <option value="booking">Booking Related</option>
+                              <option value="payment">Payment Issue</option>
+                              <option value="service">Service Quality</option>
+                              <option value="technical">Technical Support</option>
+                              <option value="partnership">Partnership</option>
+                              <option value="other">Other</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="mb-4">
+                          <label className="block text-sm font-bold text-slate2-700 mb-2">Subject</label>
+                          <input
+                            type="text"
+                            value={inquirySubject}
+                            onChange={e => setInquirySubject(e.target.value)}
+                            placeholder="Brief subject of your enquiry"
+                            className="w-full border border-slate2-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 transition-all"
+                          />
+                        </div>
+                        <div className="mb-6">
+                          <label className="block text-sm font-bold text-slate2-700 mb-2">Message *</label>
+                          <textarea
+                            value={inquiryMessage}
+                            onChange={e => setInquiryMessage(e.target.value)}
+                            placeholder="Describe your enquiry in detail..."
+                            rows={5}
+                            className="w-full border border-slate2-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500 transition-all resize-none"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between flex-wrap gap-3">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id="urgent"
+                              checked={inquiryUrgent}
+                              onChange={e => setInquiryUrgent(e.target.checked)}
+                              className="w-4 h-4 text-brand-600 border-slate2-300 rounded focus:ring-brand-500"
+                            />
+                            <label htmlFor="urgent" className="text-sm text-slate2-600">Mark as urgent</label>
+                          </div>
+                          <div className="flex gap-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setInquiryName(""); setInquiryEmail(""); setInquiryPhone("");
+                                setInquirySubject(""); setInquiryMessage(""); setInquiryUrgent(false);
+                                setInquiryType("other");
+                                showToast("Form cleared");
+                              }}
+                              className="px-6 py-3 border border-slate2-200 text-slate2-600 rounded-xl font-bold hover:bg-slate2-50 transition-all"
+                            >
+                              Clear
+                            </button>
+                            <button
+                              type="button"
+                              disabled={inquirySubmitting}
+                              onClick={async () => {
+                                if (!inquiryName.trim() || !inquiryEmail.trim() || !inquiryMessage.trim()) {
+                                  showToast("Please fill Name, Email and Message");
+                                  return;
+                                }
+                                setInquirySubmitting(true);
+                                try {
+                                  const res = await fetch("/api/inquiries", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      fullName: inquiryName,
+                                      email: inquiryEmail,
+                                      phone: inquiryPhone,
+                                      enquiryType: inquiryType,
+                                      subject: inquirySubject,
+                                      message: inquiryMessage,
+                                      isUrgent: inquiryUrgent,
+                                      userId: user?.id || "",
+                                    }),
+                                  });
+                                  const result = await res.json();
+                                  if (result.success) {
+                                    setInquirySubmitted(true);
+                                  } else {
+                                    showToast(result.error || "Failed to submit. Try again.");
+                                  }
+                                } catch (e) {
+                                  showToast("Network error. Please try again.");
+                                } finally {
+                                  setInquirySubmitting(false);
+                                }
+                              }}
+                              className="px-6 py-3 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 transition-all disabled:opacity-60 flex items-center gap-2"
+                            >
+                              {inquirySubmitting ? (
+                                <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Sending...</>
+                              ) : "Submit Enquiry"}
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </main>
         </div>
       )}
 
@@ -2232,8 +3131,8 @@ Hello! I have booked a ${lastOrder.service} service (${lastOrder.sub}) through S
                       onClick={() => openBooking(s.id)}
                       className="w-full text-left hover:text-brand-400 cursor-pointer transition-all flex items-center gap-2 group"
                     >
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate2-700 group-hover:bg-brand-500 transition-colors"></span>
-                    {s.name}
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate2-700 group-hover:bg-brand-500 transition-colors"></span>
+                      {s.name}
                     </button>
                   </li>
                 ))}
@@ -2273,7 +3172,14 @@ Hello! I have booked a ${lastOrder.service} service (${lastOrder.sub}) through S
                   </a>
                 </li>
                 <li>
-                  <button type="button" onClick={() => showToast("Help Center coming soon!")} className="hover:text-brand-400 cursor-pointer transition-all">
+                  <button type="button" onClick={() => {
+                    if (currentUser) {
+                      setView('dash');
+                      setDashPanel('help-center');
+                    } else {
+                      router.push('/sign-in');
+                    }
+                  }} className="hover:text-brand-400 cursor-pointer transition-all">
                     Help Center
                   </button>
                 </li>

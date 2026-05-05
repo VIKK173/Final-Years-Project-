@@ -1,7 +1,12 @@
-﻿import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { Schema, model, models, type InferSchemaType } from "mongoose";
 
 const userSchema = new Schema(
   {
+    clerkId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
     fullName: {
       type: String,
       required: true,
