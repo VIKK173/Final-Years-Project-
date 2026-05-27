@@ -19,8 +19,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Calculate income from completed bookings
+    const workerData = worker as any;
     const completedBookings = await BookingModel.find({
-      workerId: worker._id,
+      workerId: workerData._id,
       status: "completed"
     }).sort({ createdAt: -1 });
 

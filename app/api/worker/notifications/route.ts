@@ -20,15 +20,16 @@ export async function GET(request: NextRequest) {
     await ensureDatabaseCollections();
 
     // Get pending bookings assigned to this worker
+    const workerData = worker as any;
     const pendingBookings = await BookingModel.find({
-      workerId: worker._id,
+      workerId: workerData._id,
       status: "pending"
     })
     .populate('userId', 'fullName phone email')
     .populate('serviceId', 'name category')
     .sort({ createdAt: -1 });
 
-    const notifications = pendingBookings.map(booking => ({
+    const notifications = pendingBookings.map((booking: any) => ({
       id: booking._id,
       type: 'new_booking',
       title: 'New Service Request',

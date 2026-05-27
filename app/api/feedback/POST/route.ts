@@ -77,6 +77,9 @@ export async function POST(request: NextRequest) {
     let booking = null;
     if (bookingId) {
       booking = await BookingModel.findById(bookingId);
+      if (!booking) {
+        return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      }
     } else {
       // Create a mock booking for this feedback
       booking = await BookingModel.create({

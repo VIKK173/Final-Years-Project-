@@ -62,38 +62,38 @@ export default function WorkersManagement() {
     }
   };
 
-  useEffect(() => {
-    const fetchWorkers = async () => {
-      try {
-        setError(null);
-        console.log("Fetching workers from API...");
-        
-        const response = await fetch('/api/admin/workers');
-        
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error("API error:", errorData);
-          setError(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-          return;
-        }
-        
-        const result = await response.json();
-        console.log("API response:", result);
-        
-        if (result.success) {
-          setWorkers(result.workers || []);
-          console.log(`Successfully loaded ${result.workers?.length || 0} workers`);
-        } else {
-          setError(result.error || "Failed to fetch workers");
-        }
-      } catch (error) {
-        console.error('Error fetching workers:', error);
-        setError("Network error: Could not connect to server. Please check your connection.");
-      } finally {
-        setLoading(false);
+  const fetchWorkers = async () => {
+    try {
+      setError(null);
+      console.log("Fetching workers from API...");
+      
+      const response = await fetch('/api/admin/workers');
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("API error:", errorData);
+        setError(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+        return;
       }
-    };
+      
+      const result = await response.json();
+      console.log("API response:", result);
+      
+      if (result.success) {
+        setWorkers(result.workers || []);
+        console.log(`Successfully loaded ${result.workers?.length || 0} workers`);
+      } else {
+        setError(result.error || "Failed to fetch workers");
+      }
+    } catch (error) {
+      console.error('Error fetching workers:', error);
+      setError("Network error: Could not connect to server. Please check your connection.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchWorkers();
   }, []);
 

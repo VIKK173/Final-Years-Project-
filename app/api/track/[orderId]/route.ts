@@ -6,10 +6,11 @@ import { UserModel } from "@/lib/models/User";
 
 export async function GET(
   request: Request,
-  { params }: { params: { orderId: string } }
+  { params }: { params: Promise<{ orderId: string }> }
 ) {
   try {
-    const { orderId } = params;
+    const { orderId } = await params;
+
 
     if (!orderId) {
       return NextResponse.json(
@@ -43,7 +44,7 @@ export async function GET(
 
     // Determine tracking status based on booking status
     let trackingStatus = "booked";
-    let timestamp = bookingData.createdAt;
+    const timestamp = bookingData.createdAt;
     let estimatedArrival = "";
 
     switch (bookingData.status) {

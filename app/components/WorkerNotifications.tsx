@@ -19,9 +19,11 @@ interface Notification {
   };
   address: {
     houseNo: string;
+    flat?: string;
     street: string;
     city: string;
     pincode: string;
+    pin?: string;
   };
   createdAt: string;
   urgency: string;

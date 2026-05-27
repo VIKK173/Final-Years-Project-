@@ -20,7 +20,7 @@ export function verifyWorkerToken(token: string): WorkerTokenPayload {
   return jwt.verify(token, JWT_SECRET) as WorkerTokenPayload;
 }
 
-export async function getAuthenticatedWorker() {
+export async function getAuthenticatedWorker(): Promise<any> {
   const cookieStore = await cookies();
   const token = cookieStore.get(WORKER_AUTH_COOKIE)?.value;
 
